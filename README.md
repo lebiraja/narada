@@ -41,6 +41,12 @@ See [docs/architecture.md](docs/architecture.md) for the full picture and
 ## Tests
 
 ```bash
-docker compose run --rm --no-deps api pytest
-docker compose run --rm --no-deps web npm run test
+docker compose run --rm --no-deps api pytest          # 76 tests
+docker compose run --rm --no-deps web npx vitest run  # 44 tests
+```
+
+An end-to-end pass against the real app with a stubbed model:
+
+```bash
+docker compose exec -T -e PYTHONPATH=/app api python scripts/wire_check.py
 ```

@@ -11,24 +11,26 @@ import { useJam } from "@/lib/useJam";
 
 export default function StudioPage() {
   const { engine, state, unlock, setVolume } = useBand();
-  const { status, bars, start, stop } = useJam(engine);
+  const { status, bars, error, start, stop } = useJam(engine);
   const [recording, setRecording] = useState(false);
-  const [takeUrl, setTakeUrl] = useState<string | null>(null);
-  const takeUrlRef = useRef<string | null>(null);
+  const [take, setTake] = useState<string | null>(null);
+  const takeRef = useRef<string | null>(null);
 
   useEffect(() => {
-    takeUrlRef.current = takeUrl;
-  }, [takeUrl]);
+    takeRef.current = take;
+  }, [take]);
 
-  useEffect(() => () => {
-    if (takeUrlRef.current) URL.revokeObjectURL(takeUrlRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (takeRef.current) URL.revokeObjectURL(takeRef.current);
+    },
+    [],
+  );
 
-  const live = status === "live";
   const captured: Song | null = bars.size
     ? {
-        title: "Studio Take",
-        key: "—",
+        title: "Studio take",
+        key: "as played",
         tempo: state.tempo,
         time_signature: "4/4",
         patches: {},
@@ -38,7 +40,7 @@ export default function StudioPage() {
 
   async function roll() {
     await unlock();
-    if (!live) start(state.tempo);
+    if (status !== "live") start(state.tempo);
     await engine.current?.startRecording();
     setRecording(true);
   }
@@ -48,60 +50,81 @@ export default function StudioPage() {
     setRecording(false);
     stop();
     if (!blob) return;
-    if (takeUrl) URL.revokeObjectURL(takeUrl);
-    setTakeUrl(URL.createObjectURL(blob));
+    if (take) URL.revokeObjectURL(take);
+    setTake(URL.createObjectURL(blob));
   }
 
   return (
-    <Chrome index="03" name="STUDIO">
-      <section className="flex flex-wrap items-center gap-4 py-8">
+    <Chrome name="Record a take">
+      <section className="flex flex-wrap items-center gap-5 py-8">
         <button
           type="button"
           onClick={recording ? cut : roll}
-          className={`px-8 py-4 text-sm tracking-widest ${
-            recording ? "border border-ember text-ember" : "bg-ember text-ink"
-          }`}
+          className={
+            recording
+              ? "flex items-center gap-2.5 border border-[#a6402d] px-7 py-3.5 text-[0.9rem] text-[#d98b78]"
+              : "bg-brass px-7 py-3.5 text-[0.9rem] font-medium text-stage hover:bg-brass/85"
+          }
         >
-          {recording ? "◼ CUT" : "● ROLL TAPE"}
+          {recording && (
+            <span className="h-2 w-2 rounded-full bg-[#a6402d] animate-pulse-ember" />
+          )}
+          {recording ? "Stop recording" : "Start recording"}
         </button>
-        <p className="text-xs text-bone/40">
+
+        <p className="text-[0.85rem] text-bone/50" role="status">
           {recording
-            ? `recording · bar ${state.bar + 1} · ${bars.size} bars captured`
-            : "the band starts playing when the tape rolls"}
+            ? `Bar ${state.bar + 1}, ${bars.size} bars down`
+            : "The band starts playing when you hit record."}
         </p>
       </section>
 
-      <section className="py-4">
+      {error && (
+        <p className="mb-6 border-l-2 border-[#a6402d] pl-3 text-[0.85rem] text-[#d98b78]">
+          The band stopped playing: {error}
+        </p>
+      )}
+
+      <section className="py-2">
         <BandMeters bar={bars.get(state.bar) ?? null} onVolume={setVolume} />
       </section>
 
-      {(takeUrl || captured) && (
+      {take ? (
         <section className="border-t border-bone/10 py-8">
-          <h2 className="text-xs uppercase tracking-[0.3em] text-bone/40">The take</h2>
-          {takeUrl && (
-            <>
-              <audio controls src={takeUrl} className="mt-4 w-full" />
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={async () => download(await (await fetch(takeUrl)).blob(), "ai-band-take.webm")}
-                  className="border border-bone/20 px-4 py-2 text-xs tracking-widest hover:border-ember hover:text-ember"
-                >
-                  DOWNLOAD AUDIO
-                </button>
-                {captured && (
-                  <button
-                    type="button"
-                    onClick={async () => download(await exportMidi(captured), "ai-band-stems.zip")}
-                    className="border border-bone/20 px-4 py-2 text-xs tracking-widest hover:border-ember hover:text-ember"
-                  >
-                    MIDI STEMS
-                  </button>
-                )}
-              </div>
-            </>
-          )}
+          <h2 className="font-display text-3xl tracking-tight">Your take</h2>
+          <p className="mt-2 text-[0.85rem] text-bone/50">
+            {captured?.bars.length ?? 0} bars at {state.tempo} bpm
+          </p>
+          <audio controls src={take} className="mt-5 w-full" />
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={async () => download(await (await fetch(take)).blob(), "ai-band-take.webm")}
+              className="border border-bone/20 px-4 py-2 text-[0.85rem] hover:border-brass hover:text-brass"
+            >
+              Download audio
+            </button>
+            {captured && (
+              <button
+                type="button"
+                onClick={async () => download(await exportMidi(captured), "ai-band-parts.zip")}
+                className="border border-bone/20 px-4 py-2 text-[0.85rem] hover:border-brass hover:text-brass"
+              >
+                Download parts
+              </button>
+            )}
+          </div>
+          <p className="mt-4 max-w-[38rem] text-[0.8rem] leading-relaxed text-bone/40">
+            The audio is the mix you heard. The parts are five separate MIDI files, one per
+            player, so you can rebuild the arrangement with your own instruments.
+          </p>
         </section>
+      ) : (
+        !recording && (
+          <p className="border-t border-bone/10 py-8 text-[0.85rem] text-bone/40">
+            Nothing recorded yet.
+          </p>
+        )
       )}
     </Chrome>
   );

@@ -30,12 +30,29 @@ docker compose ps             # all four should read (healthy)
 ## Tests
 
 ```bash
-docker compose run --rm --no-deps api pytest
-docker compose run --rm --no-deps web npm run test
+docker compose run --rm --no-deps api pytest          # 76 tests
+docker compose run --rm --no-deps web npx vitest run  # 44 tests
 docker compose run --rm --no-deps web npx tsc --noEmit
 ```
 
 `--no-deps` skips booting postgres and redis for suites that do not need them.
+
+For an end-to-end pass against the real app with a stubbed model — routers,
+orchestrator, MIDI rendering and the jam socket in one run:
+
+```bash
+docker compose exec -T -e PYTHONPATH=/app api python scripts/wire_check.py
+```
+
+If a newly added npm package is missing at runtime, the anonymous
+`node_modules` volume is shadowing the rebuilt image. Remove it and let the
+container re-create it:
+
+```bash
+docker compose down web
+docker volume ls -q | grep let-band-this | xargs -r docker volume rm
+docker compose up -d web
+```
 
 ## Volumes
 

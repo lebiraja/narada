@@ -1,5 +1,23 @@
 # Status
 
+## [2026-09-13 18:25] — Visual rebuild: stage palette, per-player colour, Magic UI
+**What:** Replaced the dark/vermilion scheme with a stage palette (#12100F ground, warm lamp cast) and gave each player a permanent hue used everywhere — meters, sliders, solo buttons, hero lanes. Instrument Serif for display, Inter for UI. The hero is now five animated track lanes (`components/TrackLanes.tsx`) rather than a headline over a gradient. Magic UI supplies BlurFade, NumberTicker, ShineBorder, TextAnimate and AnimatedShinyText. Rewrote all copy in plain sentence case.
+**Why:** The first pass leaned on generic AI-design tells — numbered 01/02/03 markers on a non-sequence, all-caps eyebrows, `·`-joined meta strings, `→` on links. Colour-coding the players also solves a real problem: you can read the band without reading labels.
+**State:** DONE
+**Next:** —
+
+## [2026-09-13 18:05] — Test coverage raised from 48 to 120
+**What:** Added `test_mcp.py` (17), `test_api.py` (8), `test_jam.py` (12), `engine.test.ts` (16), `useJam.test.ts` (14), `BandMeters.test.tsx` (5), plus a Tone.js mock and shared fixtures under `web/lib/testing/`. Added `api/scripts/wire_check.py` for an end-to-end pass against the real app with a stubbed model.
+**Why:** The MCP server, HTTP routes, WebSocket loop, audio engine and hooks were all untested — precisely the parts that break silently.
+**State:** DONE
+**Next:** —
+
+## [2026-09-13 17:55] — MCP server and jam socket made injectable
+**What:** `app/mcp/server.py` now takes its store and orchestrator through `configure()`; `app/ws/jam.py` builds its dependencies via `make_store`/`make_orchestrator`. Both default to the real thing.
+**Why:** The module-level `SessionStore()` opened a Redis connection at import time, which made the MCP tools untestable and coupled importing the module to infrastructure being up.
+**State:** DONE
+**Next:** —
+
 ## [2026-09-13 17:45] — Docs written, stack verified end to end
 **What:** Wrote `docs/architecture.md`, `docs/API.md`, `docs/docker.md`, `docs/FIXES.md` and this log. Confirmed all four containers healthy, all four pages 200, MIDI export returning 5 stems, WebSocket handshake and steering working.
 **Why:** Project rules require living docs; verification before claiming completion.

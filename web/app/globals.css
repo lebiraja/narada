@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500&display=swap");
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -7,25 +8,74 @@
 }
 
 body {
-  background: #0a0a0b;
-  color: #e8e4dc;
-  font-feature-settings: "tnum" 1;
+  background: #12100f;
+  color: #ede6da;
 }
 
-/* Grain: keeps large dark fields from looking like flat void */
-body::before {
+/* Warm lamp cast from above, the way a stage is actually lit */
+body::after {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 50;
-  opacity: 0.035;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+  z-index: 0;
+  background: radial-gradient(
+    120% 80% at 50% -10%,
+    rgba(201, 150, 46, 0.09),
+    transparent 60%
+  );
+}
+
+::selection {
+  background: #c9962e;
+  color: #12100f;
+}
+
+:focus-visible {
+  outline: 2px solid #c9962e;
+  outline-offset: 3px;
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 2px;
+  background: rgba(237, 230, 218, 0.18);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 2px;
+  background: rgba(237, 230, 218, 0.18);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 14px;
+  width: 6px;
+  margin-top: -6px;
+  background: var(--thumb, #ede6da);
+  border-radius: 1px;
+}
+
+input[type="range"]::-moz-range-thumb {
+  height: 14px;
+  width: 6px;
+  border: 0;
+  border-radius: 1px;
+  background: var(--thumb, #ede6da);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
 }

@@ -1,23 +1,15 @@
 import Link from "next/link";
 
-export function Chrome({
-  index,
-  name,
-  children,
-}: {
-  index: string;
-  name: string;
-  children: React.ReactNode;
-}) {
+export function Chrome({ name, children }: { name: string; children: React.ReactNode }) {
   return (
-    <main className="mx-auto max-w-5xl px-6 py-12">
+    <main className="relative z-10 mx-auto max-w-4xl px-6 pb-24 pt-10">
       <header className="flex items-baseline justify-between border-b border-bone/10 pb-4">
-        <h1 className="flex items-baseline gap-4 tracking-tight">
-          <span className="text-xs text-bone/30">{index}</span>
-          <span className="text-xl">{name}</span>
-        </h1>
-        <Link href="/" className="text-xs text-bone/40 hover:text-ember">
-          ← BAND
+        <h1 className="font-display text-2xl tracking-tight">{name}</h1>
+        <Link
+          href="/"
+          className="text-[0.8rem] text-bone/45 underline-offset-4 hover:text-brass hover:underline"
+        >
+          Back to the band
         </Link>
       </header>
       {children}

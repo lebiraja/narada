@@ -9,3 +9,5 @@ web/public/samples/*/
 .pytest_cache/
 *.tsbuildinfo
 next-env.d.ts
+.playwright-mcp/
+*.png

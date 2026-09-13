@@ -16,12 +16,16 @@ router = APIRouter()
 #: Never generate more than this far ahead of the playhead.
 MAX_LOOKAHEAD = 6
 
+#: Swapped in tests; the socket builds its own dependencies in production.
+make_store = SessionStore
+make_orchestrator = BandOrchestrator
+
 
 @router.websocket("/ws/jam")
 async def jam(socket: WebSocket) -> None:
     await socket.accept()
-    store = SessionStore()
-    orchestrator = BandOrchestrator()
+    store = make_store()
+    orchestrator = make_orchestrator()
     session = JamSession(id=str(uuid.uuid4()))
     generating: asyncio.Task[None] | None = None
 

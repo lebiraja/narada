@@ -2,6 +2,38 @@
 
 A running log of every bug fixed. Newest on top.
 
+## 2026-09-13 — Duplicate accessible names in the band meters
+
+**Symptom:** `BandMeters > reports volume changes for the right player` failed
+with "Found multiple elements with the text of: Keyboard volume".
+
+**Root cause:** Two causes, one masking the other. Testing Library was not
+unmounting between tests, so a `rerender` left the previous tree in the
+document; and the change event was dispatched as a raw DOM `change`, which
+React's synthetic `onChange` does not observe.
+
+**Fix:** `web/vitest.setup.ts:5` now runs `cleanup` after each test, and
+`web/components/BandMeters.test.tsx:44` uses `fireEvent.change`.
+
+**Verified:** `docker compose run --rm web npx vitest run` — 44 passed.
+
+## 2026-09-13 — Web container ignored newly added dependencies
+
+**Symptom:** Every page returned 500 with `Cannot find module
+'tailwindcss-animate'`, even after rebuilding the image.
+
+**Root cause:** Two compounding problems. `tailwindcss-animate` was added as a
+devDependency although postcss needs it at runtime; and the anonymous
+`/app/node_modules` volume from the first `compose up` kept shadowing the
+rebuilt image layer, so the new install was never visible.
+
+**Fix:** Moved the package into `dependencies` in `web/package.json`, then
+removed the stale volume (`docker compose down web` + `docker volume rm`) so
+the container re-creates it from the image.
+
+**Verified:** `curl -o /dev/null -w '%{http_code}' localhost:3000` — 200, and
+all four pages render.
+
 ## 2026-09-13 — Live jam failures vanished into a background task
 
 **Symptom:** A WebSocket jam session connected and acknowledged steering, but

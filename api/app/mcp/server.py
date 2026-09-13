@@ -7,25 +7,49 @@ in the browser.
 """
 
 import json
-import uuid
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import ValidationError
 
 from app.agents.orchestrator import BandOrchestrator
-from app.core.schema import BAND, Bar, BarPart, Instrument, Note, Patch, SectionCue, Song
+from app.core.schema import Bar, BarPart, Instrument, Note, Patch, SectionCue
 from app.core.session import JamSession, SessionStore
 
 mcp = FastMCP("ai-band")
-_store = SessionStore()
-_MCP_SESSION = "mcp"
+MCP_SESSION = "mcp"
+
+_store: SessionStore | None = None
+_orchestrator: BandOrchestrator | None = None
+
+
+def configure(store: SessionStore, orchestrator: BandOrchestrator | None = None) -> None:
+    """Inject the backing store and band. Called at startup, and by tests."""
+    global _store, _orchestrator
+    _store = store
+    _orchestrator = orchestrator
+
+
+def get_store() -> SessionStore:
+    """Connect lazily so importing this module never opens a socket."""
+    global _store
+    if _store is None:
+        _store = SessionStore()
+    return _store
+
+
+def get_orchestrator() -> BandOrchestrator:
+    global _orchestrator
+    if _orchestrator is None:
+        _orchestrator = BandOrchestrator()
+    return _orchestrator
 
 
 async def _session() -> JamSession:
-    session = await _store.load(_MCP_SESSION)
+    store = get_store()
+    session = await store.load(MCP_SESSION)
     if session is None:
-        session = JamSession(id=_MCP_SESSION)
-        await _store.save(session)
+        session = JamSession(id=MCP_SESSION)
+        await store.save(session)
     return session
 
 
@@ -51,7 +75,7 @@ async def band_set_tempo(tempo: int, key: str | None = None) -> str:
     session.tempo = max(40, min(240, tempo))
     if key:
         session.key = key[:16]
-    await _store.save(session)
+    await get_store().save(session)
     return f"tempo {session.tempo} bpm, key {session.key}"
 
 
@@ -80,7 +104,7 @@ async def play_bar(instrument: str, notes: list[dict], bar: int | None = None) -
     else:
         session.remember(Bar(index=index, chord="N.C.", parts={target: part}))
         session.next_bar = index + 1
-    await _store.save(session)
+    await get_store().save(session)
 
     dropped = len(parsed) - len(part.notes)
     suffix = f" ({dropped} out-of-range notes dropped)" if dropped else ""
@@ -105,7 +129,7 @@ async def set_patch(instrument: str, patch: dict) -> str:
 
     session = await _session()
     session.steer.setdefault("patches", {})[target.value] = validated.model_dump()
-    await _store.save(session)
+    await get_store().save(session)
     return f"{target.value} voice set to {validated.oscillator}"
 
 
@@ -119,7 +143,7 @@ async def band_play(direction: str, bars: int = 4, chords: list[str] | None = No
         chords: optional progression; the band picks one if omitted.
     """
     session = await _session()
-    orchestrator = BandOrchestrator()
+    orchestrator = get_orchestrator()
     cue = SectionCue(chords=chords or ["Am7", "Dm7", "G7", "Cmaj7"], direction=direction[:280])
 
     for _ in range(max(1, min(16, bars))):
@@ -129,14 +153,14 @@ async def band_play(direction: str, bars: int = 4, chords: list[str] | None = No
         session.remember(played)
         session.next_bar += 1
 
-    await _store.save(session)
+    await get_store().save(session)
     return f"band played {bars} bars through bar {session.next_bar - 1}"
 
 
 @mcp.tool()
 async def band_reset() -> str:
     """Clear the band's state and start from bar 0."""
-    await _store.delete(_MCP_SESSION)
+    await get_store().delete(MCP_SESSION)
     return "band reset"
 
 

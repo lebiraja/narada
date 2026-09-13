@@ -4,7 +4,9 @@ import { useState } from "react";
 
 import { BandMeters } from "@/components/BandMeters";
 import { Chrome } from "@/components/Chrome";
+import { AnimatedShinyText } from "@/components/ui/animated-shiny-text";
 import { INSTRUMENTS, type Instrument } from "@/lib/audio/types";
+import { PLAYER } from "@/lib/palette";
 import { useBand } from "@/lib/useBand";
 import { useJam } from "@/lib/useJam";
 
@@ -13,77 +15,91 @@ export default function JamPage() {
   const { status, cue, bars, error, start, stop, steer } = useJam(engine);
   const [energy, setEnergy] = useState(5);
   const [tempo, setTempo] = useState(96);
-  const [mood, setMood] = useState("");
+  const [aside, setAside] = useState("");
   const [solo, setSolo] = useState<Instrument | null>(null);
-  const [dropped, setDropped] = useState<Instrument[]>([]);
+  const [resting, setResting] = useState<Instrument[]>([]);
 
   const live = status === "live";
   const currentBar = bars.get(state.bar) ?? null;
 
-  async function go() {
+  async function begin() {
     await unlock();
     start(tempo);
   }
 
-  function toggleDrop(instrument: Instrument) {
-    const next = dropped.includes(instrument)
-      ? dropped.filter((i) => i !== instrument)
-      : [...dropped, instrument];
-    setDropped(next);
+  function toggleRest(instrument: Instrument) {
+    const next = resting.includes(instrument)
+      ? resting.filter((i) => i !== instrument)
+      : [...resting, instrument];
+    setResting(next);
     steer({ drop: next });
   }
 
   return (
-    <Chrome index="02" name="LIVE JAM">
-      <section className="flex flex-wrap items-center gap-4 py-8">
+    <Chrome name="Play live">
+      <section className="flex flex-wrap items-center gap-5 py-8">
         <button
           type="button"
-          onClick={live ? stop : go}
-          className={`px-8 py-4 text-sm tracking-widest ${
-            live ? "border border-bone/20 hover:border-ember hover:text-ember" : "bg-ember text-ink"
-          }`}
+          onClick={live ? stop : begin}
+          className={
+            live
+              ? "border border-bone/20 px-7 py-3.5 text-[0.9rem] hover:border-brass hover:text-brass"
+              : "bg-brass px-7 py-3.5 text-[0.9rem] font-medium text-stage hover:bg-brass/85"
+          }
         >
-          {live ? "END THE SET" : "COUNT THEM IN"}
+          {live ? "End the set" : "Count them in"}
         </button>
-        <p className="text-xs text-bone/40">
-          {status === "connecting" && "connecting…"}
-          {live && `BAR ${state.bar + 1} · ${state.tempo} BPM`}
-          {state.starved && live && " · holding the groove"}
-          {status === "error" && "socket error — is the api up?"}
-          {status === "closed" && "set ended"}
+
+        <p className="text-[0.85rem] text-bone/50" role="status">
+          {status === "connecting" && "Getting the band together…"}
+          {live && (
+            <>
+              Bar {state.bar + 1} at {state.tempo} bpm
+              {state.starved && (
+                <AnimatedShinyText className="ml-3 inline">
+                  holding the groove while they catch up
+                </AnimatedShinyText>
+              )}
+            </>
+          )}
+          {status === "closed" && "The set ended."}
+          {status === "error" && "Lost the connection to the band."}
         </p>
       </section>
 
       {error && (
-        <p className="border-l-2 border-ember pl-3 text-xs text-ember">
-          the band stopped: {error}
+        <p className="mb-6 border-l-2 border-[#a6402d] pl-3 text-[0.85rem] text-[#d98b78]">
+          The band stopped playing: {error}
         </p>
       )}
 
       {cue && (
         <section className="border-y border-bone/10 py-6">
-          <p className="text-xs uppercase tracking-[0.3em] text-bone/40">
-            {cue.section} · energy {cue.energy} · density {cue.density}
+          <p className="font-display text-3xl tracking-tight">{cue.chords.join("   ")}</p>
+          <p className="mt-2 text-[0.85rem] text-bone/50">
+            {cue.section}, energy {cue.energy} of 10
+            {cue.soloist && (
+              <span style={{ color: PLAYER[cue.soloist].hue }}>
+                {" "}
+                — {PLAYER[cue.soloist].name} out front
+              </span>
+            )}
           </p>
-          <p className="mt-3 text-2xl tracking-tight">{cue.chords.join("  ·  ")}</p>
           {cue.direction && (
-            <p className="mt-2 text-sm italic text-bone/50">&ldquo;{cue.direction}&rdquo;</p>
+            <p className="mt-3 font-display text-lg italic text-bone/70">{cue.direction}</p>
           )}
-          {cue.soloist && <p className="mt-2 text-xs text-ember">{cue.soloist} is out front</p>}
         </section>
       )}
 
       <section className="py-8">
-        <h2 className="text-xs uppercase tracking-[0.3em] text-bone/40">The band</h2>
-        <div className="mt-4">
-          <BandMeters bar={currentBar} onVolume={setVolume} />
-        </div>
+        <BandMeters bar={currentBar} onVolume={setVolume} soloist={cue?.soloist ?? null} />
       </section>
 
-      <section className="grid gap-8 border-t border-bone/10 py-8 sm:grid-cols-2">
+      <section className="grid gap-10 border-t border-bone/10 py-8 sm:grid-cols-2">
         <div>
-          <label htmlFor="energy" className="text-xs uppercase tracking-[0.3em] text-bone/40">
-            Energy — {energy}
+          <label htmlFor="energy" className="block text-[0.9rem] text-bone/70">
+            Energy
+            <span className="ml-2 text-bone/45">{energy} of 10</span>
           </label>
           <input
             id="energy"
@@ -96,11 +112,13 @@ export default function JamPage() {
               setEnergy(value);
               steer({ energy: value });
             }}
-            className="mt-3 w-full accent-ember"
+            style={{ ["--thumb" as string]: "#c9962e" }}
+            className="mt-3 w-full"
           />
 
-          <label htmlFor="tempo" className="mt-8 block text-xs uppercase tracking-[0.3em] text-bone/40">
-            Tempo — {tempo} BPM
+          <label htmlFor="tempo" className="mt-8 block text-[0.9rem] text-bone/70">
+            Tempo
+            <span className="ml-2 text-bone/45">{tempo} bpm</span>
           </label>
           <input
             id="tempo"
@@ -113,72 +131,85 @@ export default function JamPage() {
               setTempo(value);
               steer({ tempo: value });
             }}
-            className="mt-3 w-full accent-ember"
+            style={{ ["--thumb" as string]: "#c9962e" }}
+            className="mt-3 w-full"
           />
 
-          <label htmlFor="mood" className="mt-8 block text-xs uppercase tracking-[0.3em] text-bone/40">
-            Say something to the band
-          </label>
           <form
-            className="mt-3 flex gap-2"
+            className="mt-8"
             onSubmit={(e) => {
               e.preventDefault();
-              if (mood.trim()) steer({ mood });
-              setMood("");
+              if (aside.trim()) steer({ mood: aside });
+              setAside("");
             }}
           >
-            <input
-              id="mood"
-              value={mood}
-              onChange={(e) => setMood(e.target.value)}
-              placeholder="pull it back, let the violin breathe"
-              className="flex-1 border border-bone/15 bg-transparent px-3 py-2 text-xs outline-none placeholder:text-bone/25 focus:border-ember"
-            />
-            <button type="submit" className="border border-bone/20 px-3 text-xs hover:border-ember hover:text-ember">
-              SAY
-            </button>
+            <label htmlFor="aside" className="block text-[0.9rem] text-bone/70">
+              Say something to the bandleader
+            </label>
+            <div className="mt-3 flex gap-2">
+              <input
+                id="aside"
+                value={aside}
+                onChange={(e) => setAside(e.target.value)}
+                placeholder="pull it back, let the violin breathe"
+                className="flex-1 border border-bone/15 bg-riser/40 px-3 py-2 text-[0.85rem] outline-none placeholder:text-bone/25 focus:border-brass"
+              />
+              <button
+                type="submit"
+                className="border border-bone/20 px-4 text-[0.85rem] hover:border-brass hover:text-brass"
+              >
+                Send
+              </button>
+            </div>
           </form>
         </div>
 
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-bone/40">Hand out the solo</p>
+          <p className="text-[0.9rem] text-bone/70">Give someone the solo</p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {INSTRUMENTS.map((instrument) => (
-              <button
-                key={instrument}
-                type="button"
-                onClick={() => {
-                  const next = solo === instrument ? null : instrument;
-                  setSolo(next);
-                  steer({ solo: next });
-                }}
-                className={`border px-3 py-1 text-xs ${
-                  solo === instrument
-                    ? "border-ember bg-ember text-ink"
-                    : "border-bone/15 text-bone/50 hover:border-ember hover:text-ember"
-                }`}
-              >
-                {instrument}
-              </button>
-            ))}
+            {INSTRUMENTS.map((instrument) => {
+              const chosen = solo === instrument;
+              return (
+                <button
+                  key={instrument}
+                  type="button"
+                  aria-pressed={chosen}
+                  onClick={() => {
+                    const next = chosen ? null : instrument;
+                    setSolo(next);
+                    steer({ solo: next });
+                  }}
+                  className="border px-3 py-1.5 text-[0.85rem] transition-colors"
+                  style={{
+                    borderColor: chosen ? PLAYER[instrument].hue : "rgba(237,230,218,0.15)",
+                    background: chosen ? PLAYER[instrument].hue : "transparent",
+                    color: chosen ? "#12100f" : "rgba(237,230,218,0.6)",
+                  }}
+                >
+                  {PLAYER[instrument].name}
+                </button>
+              );
+            })}
           </div>
 
-          <p className="mt-8 text-xs uppercase tracking-[0.3em] text-bone/40">Sit them out</p>
+          <p className="mt-8 text-[0.9rem] text-bone/70">Sit someone out</p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {INSTRUMENTS.map((instrument) => (
-              <button
-                key={instrument}
-                type="button"
-                onClick={() => toggleDrop(instrument)}
-                className={`border px-3 py-1 text-xs ${
-                  dropped.includes(instrument)
-                    ? "border-bone/40 text-bone/30 line-through"
-                    : "border-bone/15 text-bone/50 hover:border-ember hover:text-ember"
-                }`}
-              >
-                {instrument}
-              </button>
-            ))}
+            {INSTRUMENTS.map((instrument) => {
+              const out = resting.includes(instrument);
+              return (
+                <button
+                  key={instrument}
+                  type="button"
+                  aria-pressed={out}
+                  onClick={() => toggleRest(instrument)}
+                  className={`border border-bone/15 px-3 py-1.5 text-[0.85rem] ${
+                    out ? "text-bone/25 line-through" : "text-bone/60 hover:border-brass/60 hover:text-brass"
+                  }`}
+                >
+                  {PLAYER[instrument].name}
+                </button>
+              );
+            })}
           </div>
         </div>
       </section>
