@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+.next/
+web/public/samples/*/
+!web/public/samples/.gitkeep
+.pytest_cache/
+*.tsbuildinfo
+next-env.d.ts
