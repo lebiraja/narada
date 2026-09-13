@@ -1,5 +1,17 @@
 # Status
 
+## [2026-09-13 23:40] — First finished piece: "Monsoon Letters"
+**What:** Wrote a 30-second piece directly into the band's schema (`api/scripts/compose_monsoon.py`) — A dorian, 6/8, 84bpm, 16 bars, 328 notes. Exported through the real `/api/export/midi`, merged the five stems to GM voices, rendered with fluidsynth against MuseScore General, and mastered to -11.5 LUFS. Output in `output/`.
+**Why:** Nothing had actually been heard end to end. Writing a real piece through the production path is the only way to prove the schema, exporter and voicing choices hold up musically.
+**State:** DONE
+**Next:** Same path with live agents once an LLM key is set.
+
+## [2026-09-13 23:35] — MIDI exporter now honours time signature
+**What:** `midi.py` parsed and applied `Song.time_signature` instead of assuming 4/4, and writes a `time_signature` meta message. Added 5 tests (81 API tests total).
+**Why:** Found while exporting a 6/8 piece — every non-4/4 song was silently rendered at the wrong bar length and opened as 4/4 in any DAW.
+**State:** DONE
+**Next:** —
+
 ## [2026-09-13 18:25] — Visual rebuild: stage palette, per-player colour, Magic UI
 **What:** Replaced the dark/vermilion scheme with a stage palette (#12100F ground, warm lamp cast) and gave each player a permanent hue used everywhere — meters, sliders, solo buttons, hero lanes. Instrument Serif for display, Inter for UI. The hero is now five animated track lanes (`components/TrackLanes.tsx`) rather than a headline over a gradient. Magic UI supplies BlurFade, NumberTicker, ShineBorder, TextAnimate and AnimatedShinyText. Rewrote all copy in plain sentence case.
 **Why:** The first pass leaned on generic AI-design tells — numbered 01/02/03 markers on a non-sequence, all-caps eyebrows, `·`-joined meta strings, `→` on links. Colour-coding the players also solves a real problem: you can read the band without reading labels.

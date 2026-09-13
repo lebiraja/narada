@@ -11,3 +11,4 @@ web/public/samples/*/
 next-env.d.ts
 .playwright-mcp/
 *.png
+output/*.wav

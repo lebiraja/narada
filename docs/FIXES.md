@@ -2,6 +2,26 @@
 
 A running log of every bug fixed. Newest on top.
 
+## 2026-09-13 — MIDI export ignored the time signature
+
+**Symptom:** A 6/8 piece exported to stems played back at the wrong speed and
+in the wrong meter. Every bar was rendered as four quarter-note beats
+regardless of what `Song.time_signature` said, and the files carried no
+`time_signature` meta message, so a DAW opened them as 4/4.
+
+**Root cause:** `midi.py` had a module constant `BEATS_PER_BAR = 4` used
+directly in the tick conversion. `Song.time_signature` was validated, stored
+and returned by the API, but nothing downstream ever read it.
+
+**Fix:** Added `parse_time_signature` and `beats_per_bar` at
+`api/app/core/midi.py:24`; `_ticks` now takes the bar length as an argument,
+and `instrument_track` writes a real `time_signature` meta message. A 6/8 bar
+is three quarter-note beats, not four, which is the unit `Note.dur` counts in.
+
+**Verified:** `docker compose run --rm api pytest tests/test_midi.py` — 11
+passed, including a compound-meter bar-length assertion. Confirmed by rendering
+"Monsoon Letters" (6/8) end to end: bar positions land correctly on playback.
+
 ## 2026-09-13 — Duplicate accessible names in the band meters
 
 **Symptom:** `BandMeters > reports volume changes for the right player` failed
