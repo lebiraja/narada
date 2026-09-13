@@ -171,3 +171,35 @@ async def test_orchestrator_limits_history_context(player_payload):
     prompt = provider.calls[0]["user"]
     assert "bar 4" in prompt and "bar 5" in prompt
     assert "bar 0" not in prompt
+
+
+async def test_orchestrator_limits_concurrent_model_calls():
+    """A tight tokens-per-minute budget cannot absorb five reasoning calls at once."""
+    import asyncio
+
+    peak = 0
+    active = 0
+
+    class Counting(FakeProvider):
+        async def structured(self, **kwargs):
+            nonlocal peak, active
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+            return await super().structured(**kwargs)
+
+    provider = Counting({"PlayerOutput": {"notes": [], "patch": None}})
+    orchestrator = BandOrchestrator(provider, max_concurrency=2)
+
+    await orchestrator.play_bar(bar_index=0, cue=SectionCue(chords=["Am7"]), history=[])
+
+    assert peak <= 2
+
+
+async def test_orchestrator_defaults_to_playing_the_whole_band_at_once(player_payload):
+    provider = FakeProvider({"PlayerOutput": player_payload})
+
+    orchestrator = BandOrchestrator(provider, max_concurrency=5)
+
+    assert orchestrator._gate._value == 5

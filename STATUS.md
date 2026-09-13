@@ -1,5 +1,23 @@
 # Status
 
+## [2026-09-14 00:30] — Agents composed their own piece; seven real bugs fixed
+**What:** Wired Groq (`openai/gpt-oss-120b`) and ran the real agents end to end. Found and fixed seven failures invisible to fake-provider tests — instrument-name casing, invented instruments, one-bad-note-kills-the-bar, unhandled API errors, ignored retry-after, token saturation, and hardcoded 4/4. Added 28 resilience tests and 7 MCP tests (118 API tests total). Output: `output/Restless Monsoon Night.mp3`, 20 bars in 6/8 composed entirely by the agents.
+**Why:** Everything passed against mocks and failed against a real model on the first call.
+**State:** DONE
+**Next:** —
+
+## [2026-09-14 00:15] — Live jam measured: blocked by free-tier quota, not architecture
+**What:** `scripts/jam_live_check.py` measures generation against the bar budget. On Groq's free tier: 33.5s per bar against 2.5s. Generation itself is ~1.5s for all five players; the rest is waiting on the 8000 TPM ceiling.
+**Why:** "Live" was an untested claim. It is a quota problem, not a design problem — the lookahead buffer and bar-repeat fallback behave exactly as designed under starvation.
+**State:** BLOCKED — needs a paid tier or a local model to run live.
+**Next:** Re-measure on a Dev-tier key or local Ollama.
+
+## [2026-09-14 00:05] — Reasoning effort cut player cost 5.8x
+**What:** Added `LLM_PLAYER_EFFORT` (default "low") and `LLM_MAX_CONCURRENCY`. Measured: 1350 tokens at default effort vs 232 at low, same 4 notes.
+**Why:** Per-bar players were spending a reasoning budget they do not need; five of them saturated an 8000 TPM limit in one bar.
+**State:** DONE
+**Next:** —
+
 ## [2026-09-13 23:40] — First finished piece: "Monsoon Letters"
 **What:** Wrote a 30-second piece directly into the band's schema (`api/scripts/compose_monsoon.py`) — A dorian, 6/8, 84bpm, 16 bars, 328 notes. Exported through the real `/api/export/midi`, merged the five stems to GM voices, rendered with fluidsynth against MuseScore General, and mastered to -11.5 LUFS. Output in `output/`.
 **Why:** Nothing had actually been heard end to end. Writing a real piece through the production path is the only way to prove the schema, exporter and voicing choices hold up musically.

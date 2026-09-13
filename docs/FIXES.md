@@ -2,6 +2,70 @@
 
 A running log of every bug fixed. Newest on top.
 
+## 2026-09-14 — Seven failures found by running real agents against Groq
+
+Everything below was invisible until real models were pointed at the pipeline.
+Unit tests with fake providers passed throughout.
+
+**1. Capitalised instrument names invalidated a whole plan.** A bandleader
+returning `"Flute"` failed enum validation and threw away an otherwise perfect
+32-bar arrangement. Fixed with `Instrument._missing_` and an alias table at
+`api/app/core/schema.py:20` — "Flute", "Piano", "Drum Kit", "fiddle" all resolve.
+
+**2. The bandleader invented instruments the band does not have.** It assigned
+parts to Trumpet, Trombone and Alto Sax because the prompt never stated the
+roster in the schema's own vocabulary. Fixed by naming the five players
+explicitly in `_ROSTER` (`prompts.py:15`) and by dropping unknown instruments
+instead of failing the plan (`coerce_instruments`).
+
+**3. One bad note silenced a whole bar.** A note at `start: 1.0` — the downbeat
+of the *next* bar — failed validation and took the other three notes with it.
+`salvage_notes` (`schema.py:92`) now keeps what the model got right and clamps
+what is unambiguous, the way out-of-range pitches were already handled.
+
+**4. A 400 from the provider killed the run.** `GenerationError` only covered
+parse failures, so an API-level error propagated out of the orchestrator.
+The provider now catches `APIError` too and retries once.
+
+**5. Rate-limit retries ignored the provider's own advice.** Groq replies
+"try again in 9.6s"; we waited 0.4s and failed again. `retry_after`
+(`provider.py:96`) reads the Retry-After header or parses the message.
+
+**6. Five parallel players saturated the token budget instantly.** Each call
+cost ~4000 tokens against an 8000 TPM limit. Two fixes: `LLM_MAX_CONCURRENCY`
+gates simultaneous calls, and `LLM_PLAYER_EFFORT=low` cut per-call cost from
+1350 tokens to 232 — 5.8x cheaper for the same musical output, because per-bar
+players need to be quick and in time, not deep.
+
+**7. Every piece came back in 4/4.** The composer prompt's JSON example
+hardcoded `"time_signature": "4/4"`, so the model copied it and ignored an
+explicit 6/8 request. The example now lists alternatives and the prompt says a
+named meter is not a suggestion.
+
+**Verified:** 118 API tests pass, including 28 new resilience tests covering
+every case above. A 20-bar piece then composed end to end in 6/8 with all five
+players — `output/Restless Monsoon Night.mp3`.
+
+## 2026-09-14 — MCP errors leaked Pydantic tracebacks; hand-written bars had no chord
+
+**Symptom:** `play_bar` rejections returned raw validation dumps including
+`https://errors.pydantic.dev/...` URLs — noise for a calling agent. Separately,
+bars written through MCP were stored as `"N.C."` with no way to state the
+harmony, so the AI players had no context when filling in around them.
+
+**Root cause:** `except (ValueError, ValidationError)` with the message
+interpolated directly. `ValidationError` subclasses `ValueError`, so ordering
+also mattered — catching `ValueError` first swallowed every validation failure
+and misreported it as an unknown instrument.
+
+**Fix:** `_explain()` at `api/app/mcp/server.py:22` renders at most three
+problems in plain language; handlers catch `ValidationError` before
+`ValueError`; `play_bar` takes an optional `chord`; and writing an earlier bar
+no longer rewinds `next_bar`.
+
+**Verified:** `pytest tests/test_mcp.py` — 24 passed, including assertions that
+no `https://` appears in any rejection message.
+
 ## 2026-09-13 — MIDI export ignored the time signature
 
 **Symptom:** A 6/8 piece exported to stems played back at the wrong speed and

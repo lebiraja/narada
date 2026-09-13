@@ -1,17 +1,31 @@
 """The player agent: one instrument, one bar at a time."""
 
-import json
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.agents.prompts import player_system
 from app.core.provider import GenerationError, LLMProvider
-from app.core.schema import BAND, Bar, BarPart, Instrument, Note, Patch, SectionCue
+from app.core.schema import BAND, Bar, BarPart, Instrument, Note, Patch, SectionCue, salvage_notes
 
 
 class PlayerOutput(BaseModel):
     notes: list[Note] = Field(default_factory=list, max_length=64)
     patch: Patch | None = None
+
+    @field_validator("notes", mode="before")
+    @classmethod
+    def _salvage(cls, value: Any) -> Any:
+        """One misplaced note should cost that note, not the whole bar."""
+        return salvage_notes(value) if isinstance(value, list) else value
+
+    @field_validator("patch", mode="before")
+    @classmethod
+    def _drop_bad_patch(cls, value: Any) -> Any:
+        """A malformed patch is not worth losing the notes over."""
+        if value is None or isinstance(value, (Patch, dict)):
+            return value
+        return None
 
 
 class InstrumentAgent:

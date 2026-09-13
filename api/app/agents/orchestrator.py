@@ -4,8 +4,9 @@ import asyncio
 
 from app.agents.bandleader import Bandleader, SongPlan, chord_for_bar, cue_from_plan, resolve_soloist
 from app.agents.instrument import InstrumentAgent
+from app.core.config import get_settings
 from app.core.provider import LLMProvider
-from app.core.schema import BAND, Bar, Instrument, Patch, SectionCue, Song
+from app.core.schema import BAND, Bar, BarPart, Instrument, Patch, SectionCue, Song
 
 #: Bars of context each player sees. Two is enough to continue an idea
 #: without paying for a whole song's history every bar.
@@ -13,12 +14,16 @@ HISTORY_BARS = 2
 
 
 class BandOrchestrator:
-    def __init__(self, provider: LLMProvider | None = None) -> None:
+    def __init__(
+        self, provider: LLMProvider | None = None, max_concurrency: int | None = None
+    ) -> None:
         self._provider = provider or LLMProvider()
         self.leader = Bandleader(self._provider)
         self.players: dict[Instrument, InstrumentAgent] = {
             instrument: InstrumentAgent(instrument, self._provider) for instrument in BAND
         }
+        limit = max_concurrency or get_settings().llm_max_concurrency
+        self._gate = asyncio.Semaphore(max(1, limit))
 
     async def play_bar(self, *, bar_index: int, cue: SectionCue, history: list[Bar]) -> Bar:
         """All five players write the same bar at once."""
@@ -26,12 +31,13 @@ class BandOrchestrator:
         cue = cue.model_copy(update={"soloist": resolve_soloist(cue)})
         context = history[-HISTORY_BARS:]
 
-        parts = await asyncio.gather(
-            *(
-                player.play(bar_index=bar_index, cue=cue, history=context, chord=chord)
-                for player in self.players.values()
-            )
-        )
+        async def play(player: InstrumentAgent) -> BarPart:
+            async with self._gate:
+                return await player.play(
+                    bar_index=bar_index, cue=cue, history=context, chord=chord
+                )
+
+        parts = await asyncio.gather(*(play(player) for player in self.players.values()))
         return Bar(index=bar_index, chord=chord, parts={part.instrument: part for part in parts})
 
     async def compose(self, brief: str) -> Song:

@@ -34,7 +34,7 @@ class Bandleader:
             user=f"Brief: {brief}",
             schema=SongPlan,
             fast=False,
-            max_tokens=2500,
+            max_tokens=6000,
         )
 
     async def next_cue(
@@ -60,7 +60,7 @@ class Bandleader:
         )
         try:
             return await self._provider.structured(
-                system=BANDLEADER, user=prompt, schema=SectionCue, fast=False, max_tokens=700
+                system=BANDLEADER, user=prompt, schema=SectionCue, fast=False, max_tokens=3000
             )
         except GenerationError:
             return previous or SectionCue(chords=["Am7", "Dm7", "G7", "Cmaj7"])

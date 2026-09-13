@@ -15,6 +15,17 @@ from app.agents.orchestrator import BandOrchestrator
 from app.core.schema import Bar, BarPart, Instrument, Note, Patch, SectionCue
 from app.core.session import JamSession, SessionStore
 
+
+def _explain(exc: Exception) -> str:
+    """A short reason a calling agent can act on, not a Pydantic traceback."""
+    if isinstance(exc, ValidationError):
+        problems = [
+            f"{'.'.join(str(p) for p in err['loc']) or 'value'}: {err['msg']}"
+            for err in exc.errors()[:3]
+        ]
+        return "; ".join(problems)
+    return str(exc)
+
 mcp = FastMCP("ai-band")
 MCP_SESSION = "mcp"
 
@@ -80,19 +91,35 @@ async def band_set_tempo(tempo: int, key: str | None = None) -> str:
 
 
 @mcp.tool()
-async def play_bar(instrument: str, notes: list[dict], bar: int | None = None) -> str:
+async def play_bar(
+    instrument: str,
+    notes: list[dict],
+    bar: int | None = None,
+    chord: str | None = None,
+) -> str:
     """Write one bar for one instrument.
 
     Args:
         instrument: drums, keys, guitar, flute or violin.
         notes: [{"pitch": 0-127, "start": 0.0-0.999, "dur": bars, "vel": 1-127}]
+            start is a fraction of the bar (0.0 is the downbeat, 0.5 halfway)
+            and dur is measured in bars (0.25 is one beat in 4/4).
         bar: bar index; defaults to the band's current position.
+        chord: harmony for this bar, e.g. "Am9". Worth setting — the AI
+            players read it when they fill in around you.
     """
     try:
         target = Instrument(instrument)
         parsed = [Note.model_validate(n) for n in notes]
-    except (ValueError, ValidationError) as exc:
-        return f"rejected: {exc}"
+    except ValidationError as exc:
+        return (
+            f"rejected: {_explain(exc)}. "
+            "start is a fraction of the bar (0.0-0.999) and dur is in bars "
+            "(0.25 = one beat in 4/4)."
+        )
+    except ValueError:
+        known = ", ".join(i.value for i in Instrument)
+        return f"rejected: unknown instrument {instrument!r}. The band is: {known}"
 
     session = await _session()
     index = session.next_bar if bar is None else bar
@@ -101,9 +128,11 @@ async def play_bar(instrument: str, notes: list[dict], bar: int | None = None) -
     existing = next((b for b in session.history if b.index == index), None)
     if existing:
         existing.parts[target] = part
+        if chord:
+            existing.chord = chord
     else:
-        session.remember(Bar(index=index, chord="N.C.", parts={target: part}))
-        session.next_bar = index + 1
+        session.remember(Bar(index=index, chord=chord or "N.C.", parts={target: part}))
+        session.next_bar = max(session.next_bar, index + 1)
     await get_store().save(session)
 
     dropped = len(parsed) - len(part.notes)
@@ -124,8 +153,11 @@ async def set_patch(instrument: str, patch: dict) -> str:
     try:
         target = Instrument(instrument)
         validated = Patch.model_validate(patch)
-    except (ValueError, ValidationError) as exc:
-        return f"rejected: {exc}"
+    except ValidationError as exc:
+        return f"rejected: {_explain(exc)}"
+    except ValueError:
+        known = ", ".join(i.value for i in Instrument)
+        return f"rejected: unknown instrument {instrument!r}. The band is: {known}"
 
     session = await _session()
     session.steer.setdefault("patches", {})[target.value] = validated.model_dump()
