@@ -2,6 +2,26 @@
 
 A running log of every bug fixed. Newest on top.
 
+## 2026-09-14 — A raw network error escaped the provider's retry handler
+
+**Symptom:** Found by a test written to prove the new cover-for-a-lost-bar
+behaviour survives a real transport failure. An `httpx.ConnectError` raised
+below the OpenAI client propagated straight out of `LLMProvider.structured`,
+past the retry loop and past `InstrumentAgent`'s `GenerationError` handler,
+crashing the composition.
+
+**Root cause:** The retry handler caught `APIError`, which covers what the
+OpenAI client wraps, but not `httpx.HTTPError` — a refused connection, DNS
+failure or dropped socket underneath it. Live runs happened not to hit this
+because the client wrapped the errors they produced.
+
+**Fix:** `api/app/core/provider.py:79` now catches `httpx.HTTPError` too, so
+any transport failure becomes a `GenerationError` and the player covers the
+bar instead of the run dying.
+
+**Verified:** `pytest tests/test_resilience.py` — 29 passed, including a
+client that raises `ConnectError` directly.
+
 ## 2026-09-14 — A player that lost a bar fell silent instead of covering
 
 **Symptom:** During a live agent composition the keys dropped out for three

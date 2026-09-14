@@ -225,3 +225,45 @@ class TestProviderRetry:
 
 async def _no_sleep(_seconds):
     return None
+
+
+class TestCoverUnderTransportFailure:
+    """The fallback must survive a real transport error, not just a fake one.
+
+    FakeProvider raises GenerationError directly; a live provider raises an
+    APIError deep inside the OpenAI client and the provider converts it. This
+    exercises that whole path.
+    """
+
+    async def test_a_connection_failure_still_reaches_the_cover(self, monkeypatch):
+        import httpx
+
+        from app.agents.instrument import InstrumentAgent
+        from app.core.schema import Bar, BarPart, Instrument, Note, SectionCue
+
+        class Refusing:
+            chat = property(lambda self: self)
+
+            @property
+            def completions(self):
+                return self
+
+            async def create(self, **kwargs):
+                raise httpx.ConnectError("connection refused")
+
+        monkeypatch.setattr("asyncio.sleep", _no_sleep)
+        provider = LLMProvider(client=Refusing())
+        previous = Bar(index=0, chord="Dm", parts={
+            Instrument.KEYS: BarPart(
+                instrument=Instrument.KEYS,
+                bar=0,
+                notes=[Note(pitch=50, start=0.0, dur=0.9, vel=70)],
+            )
+        })
+
+        part = await InstrumentAgent(Instrument.KEYS, provider).play(
+            bar_index=1, cue=SectionCue(chords=["Dm"]), history=[previous], chord="Dm"
+        )
+
+        assert [n.pitch for n in part.notes] == [50]
+        assert part.notes[0].velocity < 70

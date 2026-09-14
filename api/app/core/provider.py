@@ -9,6 +9,7 @@ import logging
 import re
 from typing import TypeVar
 
+import httpx
 from openai import APIError, AsyncOpenAI, RateLimitError
 from pydantic import BaseModel, ValidationError
 
@@ -86,7 +87,13 @@ class LLMProvider:
                 if not raw.strip():
                     raise ValueError("empty response body")
                 return schema.model_validate(json.loads(_strip_fence(raw)))
-            except (APIError, json.JSONDecodeError, ValidationError, ValueError) as exc:
+            except (
+                APIError,
+                httpx.HTTPError,
+                json.JSONDecodeError,
+                ValidationError,
+                ValueError,
+            ) as exc:
                 last = exc
                 log.warning(
                     "%s attempt %d/%d failed: %s", schema.__name__, attempt + 1, attempts, exc
