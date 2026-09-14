@@ -90,7 +90,7 @@ def test_stems_zip_contains_all_five_instruments():
 
 def test_slug_handles_awkward_titles():
     assert _slug("Monsoon / Line!") == "monsoon-line"
-    assert _slug("***") == "ai-band"
+    assert _slug("***") == "narada"
 
 
 def test_parse_time_signature():

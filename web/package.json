@@ -1,5 +1,5 @@
 {
-  "name": "ai-band-web",
+  "name": "narada-web",
   "private": true,
   "scripts": {
     "dev": "next dev",

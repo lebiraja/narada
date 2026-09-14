@@ -2,7 +2,7 @@
 
 ## Overview
 
-AI Band is a web application in which a five-piece band — drums, keyboard,
+Narada is a web application in which a five-piece band — drums, keyboard,
 guitar, flute and violin — is played entirely by AI agents. Each instrument has
 its own agent with a musical character and range; a bandleader agent decides
 harmony, form, energy and who takes the solo. The primary actors are the

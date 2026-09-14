@@ -98,7 +98,7 @@ so playback never stops on a slow model response.
 Register it with:
 
 ```json
-{"mcpServers": {"ai-band": {
+{"mcpServers": {"narada": {
   "command": "docker",
   "args": ["compose", "exec", "-T", "api", "python", "-m", "app.mcp.server"]
 }}}

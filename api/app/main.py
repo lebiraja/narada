@@ -8,7 +8,7 @@ from app.ws import jam
 
 logging.basicConfig(level=logging.INFO)
 
-app = FastAPI(title="AI Band", version="0.1.0")
+app = FastAPI(title="Narada", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,

@@ -106,4 +106,4 @@ def stems_zip(song: Song) -> bytes:
 
 def _slug(title: str) -> str:
     words = "".join(c if c.isalnum() else " " for c in title).split()
-    return "-".join(words).lower() or "ai-band"
+    return "-".join(words).lower() or "narada"

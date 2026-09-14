@@ -1,9 +1,12 @@
-# AI BAND
+# NARADA
 
 Five instruments. Five agents. One band.
 
 Drums, keyboard, guitar, flute and violin — each played by its own AI agent,
 under a bandleader that decides harmony, form, energy and who takes the solo.
+
+Named for Narada, the sage who travels between worlds with a veena in hand,
+carrying messages nobody else can deliver.
 
 - **Composer** — brief the bandleader, get a full five-part arrangement.
 - **Live jam** — the band plays continuously while you steer energy, tempo, mood, solos and who sits out.

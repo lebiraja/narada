@@ -99,7 +99,7 @@ export default function StudioPage() {
           <div className="mt-4 flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={async () => download(await (await fetch(take)).blob(), "ai-band-take.webm")}
+              onClick={async () => download(await (await fetch(take)).blob(), "narada-take.webm")}
               className="border border-bone/20 px-4 py-2 text-[0.85rem] hover:border-brass hover:text-brass"
             >
               Download audio
@@ -107,7 +107,7 @@ export default function StudioPage() {
             {captured && (
               <button
                 type="button"
-                onClick={async () => download(await exportMidi(captured), "ai-band-parts.zip")}
+                onClick={async () => download(await exportMidi(captured), "narada-parts.zip")}
                 className="border border-bone/20 px-4 py-2 text-[0.85rem] hover:border-brass hover:text-brass"
               >
                 Download parts

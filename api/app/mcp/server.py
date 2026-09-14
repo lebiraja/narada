@@ -26,7 +26,7 @@ def _explain(exc: Exception) -> str:
         return "; ".join(problems)
     return str(exc)
 
-mcp = FastMCP("ai-band")
+mcp = FastMCP("narada")
 MCP_SESSION = "mcp"
 
 _store: SessionStore | None = None
