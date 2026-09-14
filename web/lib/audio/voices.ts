@@ -1,7 +1,8 @@
 import * as Tone from "tone";
 
-import { midiToNote, toSynthOptions, velToGain } from "./patch";
-import type { BarPart, Instrument, Patch } from "./types";
+import { midiToNote, resolveVelocity, toSynthOptions, velToGain } from "./patch";
+import type { BarPart, Instrument, Note, Patch } from "./types";
+import { PIECES, voiceFor, type VoiceSpec } from "./voices.generated";
 
 /**
  * Sampled instruments served from our own origin. Each entry maps a few
@@ -15,32 +16,64 @@ const SAMPLE_MAP: Record<Instrument, Record<string, string>> = {
   violin: { G3: "G3.mp3", D4: "D4.mp3", A5: "A5.mp3" },
 };
 
-/** Fallback synth character per instrument, used until samples load. */
-const FALLBACK: Record<Instrument, Patch> = {
-  drums: { oscillator: "square", attack: 0.001, decay: 0.12, sustain: 0, release: 0.05, filter_freq: 6000, filter_q: 1, reverb: 0.1, delay: 0 },
-  keys: { oscillator: "triangle", attack: 0.005, decay: 0.4, sustain: 0.3, release: 1.2, filter_freq: 9000, filter_q: 1, reverb: 0.2, delay: 0 },
-  guitar: { oscillator: "sawtooth", attack: 0.004, decay: 0.3, sustain: 0.2, release: 0.6, filter_freq: 5000, filter_q: 2, reverb: 0.15, delay: 0 },
-  flute: { oscillator: "sine", attack: 0.06, decay: 0.1, sustain: 0.8, release: 0.4, filter_freq: 12000, filter_q: 1, reverb: 0.35, delay: 0 },
-  violin: { oscillator: "fmsine", attack: 0.09, decay: 0.2, sustain: 0.8, release: 0.7, filter_freq: 8000, filter_q: 1.5, reverb: 0.4, delay: 0 },
-};
+/** Turn a generated voice spec into Tone.PolySynth options. */
+function synthOptionsFor(spec: VoiceSpec) {
+  const browser = spec.browser;
+  if (!browser) return undefined;
+  return toSynthOptions({
+    oscillator: browser.oscillator as Patch["oscillator"],
+    attack: browser.attack,
+    decay: browser.decay,
+    sustain: browser.sustain,
+    release: browser.release,
+    filter_freq: browser.filter_freq,
+    filter_q: 1,
+    reverb: 0,
+    delay: 0,
+  });
+}
 
 /**
- * One instrument's playable voice. Holds a sampler (preferred) and a synth
- * (agent-authored patches, and the fallback while samples are missing).
+ * One instrument's playable voice.
+ *
+ * Each articulation gets its own synth, built lazily and kept, so a violin
+ * switching between bowed and pizzicato within a bar is a different sound
+ * rather than the same sound at a different velocity. A patch written by an
+ * agent overrides the articulation table for that instrument.
  */
 export class Voice {
   readonly instrument: Instrument;
   private gain: Tone.Gain;
   private reverb: Tone.Reverb;
   private sampler: Tone.Sampler | null = null;
-  private synth: Tone.PolySynth;
+  private synths = new Map<string, Tone.PolySynth>();
+  private override: Tone.PolySynth | null = null;
   private useSampler = false;
 
   constructor(instrument: Instrument) {
     this.instrument = instrument;
-    this.reverb = new Tone.Reverb({ decay: 2.4, wet: FALLBACK[instrument].reverb }).toDestination();
+    const base = voiceFor(instrument, null);
+    this.reverb = new Tone.Reverb({ decay: 2.4, wet: 0.25 }).toDestination();
     this.gain = new Tone.Gain(0.8).connect(this.reverb);
-    this.synth = new Tone.PolySynth(Tone.Synth, toSynthOptions(FALLBACK[instrument])).connect(this.gain);
+    this.synths.set("", this.build(base));
+  }
+
+  private build(spec: VoiceSpec): Tone.PolySynth {
+    const options = synthOptionsFor(spec);
+    return new Tone.PolySynth(Tone.Synth, options).connect(this.gain);
+  }
+
+  /** The synth for one articulation, built on first use. */
+  private synthFor(articulation: string | null | undefined): Tone.PolySynth {
+    if (this.override) return this.override;
+
+    const key = articulation?.trim().toLowerCase() ?? "";
+    const existing = this.synths.get(key);
+    if (existing) return existing;
+
+    const synth = this.build(voiceFor(this.instrument, key));
+    this.synths.set(key, synth);
+    return synth;
   }
 
   /** Try to load self-hosted samples. Silently keeps the synth on failure. */
@@ -59,16 +92,18 @@ export class Voice {
     }
   }
 
-  /** Swap in an agent-authored patch. Switches this voice to synth mode. */
+  /** Swap in an agent-authored patch, overriding the articulation table. */
   applyPatch(patch: Patch): void {
-    this.synth.dispose();
-    this.synth = new Tone.PolySynth(Tone.Synth, toSynthOptions(patch)).connect(this.gain);
+    this.override?.dispose();
+    this.override = new Tone.PolySynth(Tone.Synth, toSynthOptions(patch)).connect(this.gain);
     this.reverb.wet.value = patch.reverb;
     this.useSampler = false;
   }
 
   /** Prefer the sampler again (undo a patch). No-op if samples never loaded. */
   useSampledVoice(): void {
+    this.override?.dispose();
+    this.override = null;
     if (this.sampler) this.useSampler = true;
   }
 
@@ -76,24 +111,50 @@ export class Voice {
     this.gain.gain.rampTo(value, 0.05);
   }
 
+  /** The pitch to sound: a named drum piece supplies its own. */
+  private pitchOf(note: Note, spec: VoiceSpec): number | null {
+    if (note.piece) {
+      const piece = PIECES[note.piece.trim().toLowerCase().replace(/[ -]/g, "_")];
+      if (!piece) return null;
+      return piece.note;
+    }
+    if (note.pitch < 0) return null;
+    return Math.max(0, Math.min(127, note.pitch + spec.transpose));
+  }
+
   /** Schedule one bar's notes at absolute transport time `barStart` (seconds). */
   schedule(part: BarPart, barStart: number, barLength: number): void {
-    const target: Tone.Sampler | Tone.PolySynth =
-      this.useSampler && this.sampler ? this.sampler : this.synth;
-
     for (const note of part.notes) {
+      const spec = voiceFor(this.instrument, note.articulation);
+      const pitch = this.pitchOf(note, spec);
+      if (pitch === null) continue;
+
+      const pieceDefault = note.piece
+        ? PIECES[note.piece.trim().toLowerCase().replace(/[ -]/g, "_")]?.vel
+        : undefined;
+      const velocity = resolveVelocity(note.vel, pieceDefault) * spec.velocityScale;
+
+      // An articulation that only reshapes the note keeps the sampled voice;
+      // one with its own timbre needs the synth to hear the difference.
+      const target: Tone.Sampler | Tone.PolySynth =
+        this.useSampler && this.sampler && !spec.browser
+          ? this.sampler
+          : this.synthFor(note.articulation);
+
       target.triggerAttackRelease(
-        midiToNote(note.pitch),
-        Math.max(0.02, note.dur * barLength),
+        midiToNote(pitch),
+        Math.max(0.02, note.dur * spec.durationScale * barLength),
         barStart + note.start * barLength,
-        velToGain(note.vel),
+        velToGain(Math.min(127, velocity)),
       );
     }
   }
 
   dispose(): void {
     this.sampler?.dispose();
-    this.synth.dispose();
+    this.override?.dispose();
+    for (const synth of this.synths.values()) synth.dispose();
+    this.synths.clear();
     this.gain.dispose();
     this.reverb.dispose();
   }

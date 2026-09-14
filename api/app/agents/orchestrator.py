@@ -48,6 +48,7 @@ class BandOrchestrator:
             key=plan.key,
             tempo=plan.tempo,
             time_signature=plan.time_signature,
+            kit=plan.kit,
         )
 
         bar_index = 0

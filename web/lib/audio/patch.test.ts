@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { midiToNote, toSynthOptions, velToGain } from "./patch";
+import { DEFAULT_VELOCITY, midiToNote, resolveVelocity, toSynthOptions, velToGain } from "./patch";
 import type { Patch } from "./types";
 
 const patch: Patch = {
@@ -37,5 +37,20 @@ describe("velToGain", () => {
     expect(velToGain(127)).toBe(1);
     expect(velToGain(200)).toBe(1);
     expect(velToGain(-5)).toBe(0);
+  });
+});
+
+describe("resolveVelocity", () => {
+  it("uses the note's own velocity when set", () => {
+    expect(resolveVelocity(64)).toBe(64);
+  });
+
+  it("falls back to a kit piece's default", () => {
+    expect(resolveVelocity(null, 28)).toBe(28);
+  });
+
+  it("falls back to a sensible default when nothing is given", () => {
+    expect(resolveVelocity(null)).toBe(DEFAULT_VELOCITY);
+    expect(resolveVelocity(undefined)).toBe(DEFAULT_VELOCITY);
   });
 });

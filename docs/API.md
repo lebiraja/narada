@@ -93,7 +93,14 @@ so playback never stops on a slow model response.
 | `play_bar` | Write one bar for one instrument yourself |
 | `set_patch` | Design an instrument's synth voice |
 | `band_play` | Hand a direction to the AI players and let them write bars |
+| `band_reference` | What an instrument can play: articulations, kit pieces, and a chord's tones/scale/avoid-notes |
+| `band_set_kit` | Put the drummer behind a standard, room, jazz, brush or orchestra kit |
 | `band_reset` | Clear state, start from bar 0 |
+
+Melodic notes may carry an `articulation` (`pizz`, `palm_mute`, `rhodes`, …)
+and `slur`. Drum notes name a `piece` (`kick`, `ghost_snare`, `ride_bell`)
+instead of a pitch, and inherit that piece's default velocity unless one is
+given. Call `band_reference` for the full vocabulary rather than guessing.
 
 Register it with:
 

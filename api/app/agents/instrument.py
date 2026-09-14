@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.agents.prompts import player_system
 from app.core.provider import GenerationError, LLMProvider
 from app.core.schema import BAND, Bar, BarPart, Instrument, Note, Patch, SectionCue, salvage_notes
+from app.core.theory import describe_harmony
 
 
 class PlayerOutput(BaseModel):
@@ -68,26 +69,32 @@ class InstrumentAgent:
     def _build_prompt(
         self, *, bar_index: int, cue: SectionCue, history: list[Bar], chord: str
     ) -> str:
+        soloing = cue.soloist == self.instrument
         featured = (
             "You have the solo — lead the band."
-            if cue.soloist == self.instrument
+            if soloing
             else f"{cue.soloist} is soloing; support them and stay out of the way."
             if cue.soloist
             else "No soloist this section; play your normal role."
         )
-        return "\n".join(
-            [
-                f"Bar {bar_index} of the {cue.section}. Chord: {chord}.",
-                f"Energy {cue.energy}/10, density {cue.density}/10.",
-                f"Bandleader says: {cue.direction or 'play it straight'}",
-                featured,
-                "",
-                "Recent bars:",
-                _render_history(history),
-                "",
-                f"Write bar {bar_index} for {self.instrument}.",
-            ]
-        )
+        harmony = describe_harmony(chord, self.instrument, soloing=soloing)
+
+        lines = [
+            f"Bar {bar_index} of the {cue.section}.",
+            f"Energy {cue.energy}/10, density {cue.density}/10.",
+            f"Bandleader says: {cue.direction or 'play it straight'}",
+            featured,
+        ]
+        if harmony:
+            lines += ["", harmony]
+        lines += [
+            "",
+            "Recent bars:",
+            _render_history(history),
+            "",
+            f"Write bar {bar_index} for {self.instrument}.",
+        ]
+        return "\n".join(lines)
 
 
 def _render_history(history: list[Bar]) -> str:

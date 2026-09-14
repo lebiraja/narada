@@ -3,7 +3,7 @@
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class Instrument(StrEnum):
@@ -85,11 +85,37 @@ RANGES: dict[Instrument, tuple[int, int]] = {
 }
 
 
+#: Velocity for a note that names neither a velocity nor a kit piece.
+DEFAULT_VELOCITY = 90
+
+
 class Note(BaseModel):
-    pitch: int = Field(ge=0, le=127)
+    #: Optional only when `piece` names a drum: the kit supplies the pitch.
+    pitch: int = Field(default=-1, ge=-1, le=127)
     start: float = Field(ge=0.0, lt=1.0, description="Position in bar, 0.0-1.0")
     dur: float = Field(gt=0.0, le=4.0, description="Duration in bars")
-    vel: int = Field(default=90, ge=1, le=127)
+    #: None on a drum note means "whatever that kit piece is normally struck at".
+    vel: int | None = Field(default=None, ge=1, le=127)
+
+    #: How this note is played — "pizz", "palm_mute", "staccato". None is the
+    #: instrument's normal voice. Unknown values fall back rather than fail.
+    articulation: str | None = Field(default=None, max_length=24)
+    #: Drums only: the kit piece struck, e.g. "kick", "ghost_snare". When set,
+    #: it supplies the pitch, so an agent never writes a GM number.
+    piece: str | None = Field(default=None, max_length=24)
+    #: Play legato into the next note rather than re-articulating.
+    slur: bool = False
+
+    @model_validator(mode="after")
+    def _needs_a_pitch_or_a_piece(self) -> "Note":
+        if self.pitch < 0 and not self.piece:
+            raise ValueError("a note needs either a pitch or a named kit piece")
+        return self
+
+    @property
+    def velocity(self) -> int:
+        """The velocity to actually play, once defaults are applied."""
+        return self.vel if self.vel else DEFAULT_VELOCITY
 
 
 def salvage_notes(values: Any) -> list[dict[str, Any]]:
@@ -110,20 +136,32 @@ def salvage_notes(values: Any) -> list[dict[str, Any]]:
         try:
             start = float(note.get("start", 0.0))
             dur = float(note.get("dur", 0.25))
-            pitch = int(note.get("pitch"))
+            # A drum note may name a kit piece instead of a pitch.
+            has_piece = bool(note.get("piece"))
+            pitch = int(note["pitch"]) if note.get("pitch") is not None else None
+            if pitch is None and not has_piece:
+                continue
         except (TypeError, ValueError):
             continue
 
         # A note landing exactly on the next downbeat belongs to the next bar.
         if not 0.0 <= start < 1.0:
             continue
-        if not 0 <= pitch <= 127:
+        if pitch is not None and not 0 <= pitch <= 127:
             continue
 
         note["start"] = start
         note["dur"] = min(4.0, max(0.01, dur))
-        note["pitch"] = pitch
-        note["vel"] = min(127, max(1, int(note.get("vel", 90))))
+        if pitch is not None:
+            note["pitch"] = pitch
+        else:
+            note.pop("pitch", None)
+        # Leave velocity unset when the model omitted it: a named kit piece
+        # supplies its own, and melodic notes fall back to DEFAULT_VELOCITY.
+        if note.get("vel") is not None:
+            note["vel"] = min(127, max(1, int(note["vel"])))
+        else:
+            note.pop("vel", None)
         salvaged.append(note)
 
     return salvaged
@@ -161,11 +199,39 @@ class BarPart(BaseModel):
     @field_validator("notes")
     @classmethod
     def _notes_in_range(cls, notes: list[Note], info) -> list[Note]:
+        """Drop what this instrument cannot physically play.
+
+        A drum note naming a kit piece takes its pitch from that piece, so
+        the agent never has to know the General MIDI numbers.
+        """
         instrument = info.data.get("instrument")
         if instrument is None:
             return notes
+
+        if instrument is Instrument.DRUMS:
+            notes = [n for n in (_resolved_drum(note) for note in notes) if n is not None]
+
         lo, hi = RANGES[instrument]
         return [n for n in notes if lo <= n.pitch <= hi]
+
+
+def _resolved_drum(note: Note) -> Note | None:
+    """Turn a named kit piece into its pitch and default velocity.
+
+    Returns None when a piece name is given but unrecognised — silently
+    turning an unknown surface into a kick drum would be worse than silence.
+    """
+    from app.core.kit import resolve
+
+    if note.piece is None:
+        return note
+
+    piece = resolve(note.piece)
+    if piece is None:
+        return None
+    return note.model_copy(
+        update={"pitch": piece.note, "vel": note.vel if note.vel else piece.velocity}
+    )
 
 
 class Bar(BaseModel):
@@ -203,5 +269,7 @@ class Song(BaseModel):
     key: str = Field(max_length=16)
     tempo: int = Field(ge=40, le=240)
     time_signature: str = Field(default="4/4", max_length=8)
+    #: Which drum kit the piece is played on: standard, room, jazz, brush.
+    kit: str = Field(default="standard", max_length=16)
     patches: dict[Instrument, Patch] = Field(default_factory=dict)
     bars: list[Bar] = Field(default_factory=list)

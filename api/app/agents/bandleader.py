@@ -1,6 +1,8 @@
 """The bandleader: harmony, form, and who gets featured."""
 
-from pydantic import BaseModel, Field
+from typing import Any
+
+from pydantic import BaseModel, Field, field_validator
 
 from app.agents.prompts import BANDLEADER, COMPOSER
 from app.core.provider import GenerationError, LLMProvider
@@ -16,7 +18,20 @@ class SongPlan(BaseModel):
     key: str = Field(max_length=16)
     tempo: int = Field(ge=40, le=240)
     time_signature: str = Field(default="4/4", max_length=8)
+    #: Which drum kit the piece is played on. An unrecognised name falls back
+    #: to the standard kit rather than failing the plan.
+    kit: str = Field(default="standard", max_length=16)
     sections: list[SectionPlan] = Field(min_length=1, max_length=16)
+
+    @field_validator("kit", mode="before")
+    @classmethod
+    def _known_kit(cls, value: Any) -> str:
+        from app.core.kit import Kit
+
+        try:
+            return Kit(str(value).strip().lower()).value
+        except ValueError:
+            return Kit.STANDARD.value
 
     @property
     def total_bars(self) -> int:

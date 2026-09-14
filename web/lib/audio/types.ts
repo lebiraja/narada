@@ -6,7 +6,14 @@ export interface Note {
   pitch: number;
   start: number;
   dur: number;
-  vel: number;
+  /** Null means "use the instrument's or kit piece's default". */
+  vel: number | null;
+  /** How the note is played: "pizz", "palm_mute", "staccato"… */
+  articulation?: string | null;
+  /** Drums only: the kit piece struck, which supplies the pitch. */
+  piece?: string | null;
+  /** Play legato into the next note. */
+  slur?: boolean;
 }
 
 export interface Patch {
@@ -39,6 +46,8 @@ export interface Song {
   key: string;
   tempo: number;
   time_signature: string;
+  /** Which drum kit: standard, room, jazz, brush, orchestra. */
+  kit?: string;
   patches: Partial<Record<Instrument, Patch>>;
   bars: Bar[];
 }

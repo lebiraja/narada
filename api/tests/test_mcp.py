@@ -208,12 +208,91 @@ async def test_rejecting_a_bad_patch_is_readable(wired):
     assert "https://" not in result
 
 
+async def test_drums_are_written_as_named_kit_pieces(wired):
+    result = await server.play_bar("drums", [
+        {"piece": "kick", "start": 0.0, "dur": 0.1},
+        {"piece": "ghost_snare", "start": 0.5, "dur": 0.05},
+    ])
+
+    assert "2 notes" in result
+    notes = json.loads(await server.band_state())["recent_bars"][0]["parts"]["drums"]["notes"]
+    assert [n["pitch"] for n in notes] == [36, 38]
+    assert notes[1]["vel"] < notes[0]["vel"]  # a ghost note is quieter
+
+
+async def test_an_unknown_kit_piece_is_dropped_not_guessed(wired):
+    result = await server.play_bar("drums", [
+        {"piece": "kick", "start": 0.0, "dur": 0.1},
+        {"piece": "gong", "start": 0.5, "dur": 0.1},
+    ])
+
+    assert "1 notes" in result
+
+
+async def test_articulations_survive_onto_the_note(wired):
+    await server.play_bar("violin", [
+        {"pitch": 69, "start": 0.0, "dur": 0.25, "vel": 80, "articulation": "pizz"},
+    ])
+
+    notes = json.loads(await server.band_state())["recent_bars"][0]["parts"]["violin"]["notes"]
+
+    assert notes[0]["articulation"] == "pizz"
+
+
+async def test_the_kit_can_be_changed(wired):
+    assert "brush" in await server.band_set_kit("Brush")
+
+    session = await wired.load(server.MCP_SESSION)
+    assert session.steer["kit"] == "brush"
+
+
+async def test_an_unknown_kit_is_rejected_with_the_options(wired):
+    result = await server.band_set_kit("tabla")
+
+    assert result.startswith("rejected:")
+    assert "brush" in result
+
+
+async def test_the_reference_lists_an_instrument_s_articulations(wired):
+    reference = await server.band_reference("violin")
+
+    assert "pizz" in reference
+    assert "tremolo" in reference
+
+
+async def test_the_reference_gives_the_drummer_its_kit(wired):
+    reference = await server.band_reference("drums")
+
+    assert "kick" in reference
+    assert "ghost_snare" in reference
+
+
+async def test_the_reference_explains_a_chord_when_asked(wired):
+    reference = await server.band_reference("flute", "Am9")
+
+    assert "A C E G B" in reference
+    assert "Avoid" in reference
+
+
+async def test_the_reference_covers_the_whole_band_by_default(wired):
+    reference = await server.band_reference()
+
+    for instrument in Instrument:
+        assert instrument.value in reference
+
+
+async def test_the_reference_rejects_an_unknown_instrument(wired):
+    assert "unknown instrument" in await server.band_reference("trombone")
+
+
 async def test_every_tool_is_registered_with_mcp():
     tools = {tool.name for tool in await server.mcp.list_tools()}
 
     assert tools == {
         "band_state",
         "band_set_tempo",
+        "band_set_kit",
+        "band_reference",
         "play_bar",
         "set_patch",
         "band_play",

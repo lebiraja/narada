@@ -36,6 +36,9 @@ steers in real time), and a studio (record a take, export audio and MIDI stems).
 | `app.agents.orchestrator` | Runs the five players in parallel per bar |
 | `app.core.provider` | Model access over any OpenAI-compatible endpoint |
 | `app.core.schema` | The musical contract shared by backend, frontend and MCP |
+| `app.core.theory` | Chord symbols to real pitch sets: chord tones, modes, tensions, registers |
+| `app.core.articulation` | How each instrument can change voice, and what that means for MIDI and the browser |
+| `app.core.kit` | The drum kit by name — pieces, velocities, and kit selection |
 | `app.core.session` | Live jam state in Redis; listener steering |
 | `app.core.midi` | Renders a Song into per-instrument MIDI stems |
 | `app.mcp.server` | Exposes the band as MCP tools for any MCP client |
@@ -113,17 +116,60 @@ steers in real time), and a studio (record a take, export audio and MIDI stems).
 
 ## Data Models
 
-- **Note** — `pitch` (MIDI 0-127), `start` (0.0-1.0 within the bar), `dur` (in bars), `vel`.
+- **Note** — `pitch` (MIDI 0-127), `start` (0.0-1.0 within the bar), `dur` (in bars), `vel` (optional), plus:
+  - `articulation` — how it is played: `pizz`, `tremolo`, `palm_mute`, `harmonics`, `rhodes`, `recorder`, `staccato`, `accent`, `ghost`… Unknown values fall back to the instrument's normal voice rather than failing.
+  - `piece` — drums only: a named kit surface (`kick`, `ghost_snare`, `ride_bell`) which supplies the pitch and a default velocity, so an agent never writes a General MIDI number.
+  - `slur` — play legato into the next note.
 - **Patch** — an agent-authored synth voice: oscillator, ADSR, filter, reverb, delay. A validated shape, never executable code.
 - **BarPart** — one instrument's notes for one bar, plus an optional patch. Out-of-range pitches are dropped, not rejected, so one bad note never kills a bar.
 - **Bar** — `index`, `chord`, and a `BarPart` per instrument.
 - **SectionCue** — the bandleader's instruction: section name, chord list, energy, density, soloist, tacet list, and a one-line direction.
-- **Song** — title, key, tempo, time signature, per-instrument patches, and an ordered list of bars.
+- **Song** — title, key, tempo, time signature, `kit` (standard/room/jazz/brush/orchestra), per-instrument patches, and an ordered list of bars.
 - **JamSession** — live state: key, tempo, next bar, current cue, listener steering, and the last four bars as prompt context.
 
 Relationships: a `Song` has many `Bar`s; a `Bar` has up to five `BarPart`s, one
 per `Instrument`; a `SectionCue` governs a window of consecutive `Bar`s; a
 `JamSession` holds one current `SectionCue` and a rolling window of `Bar`s.
+
+## Musical Knowledge
+
+Three modules give the players knowledge they used to have to guess at.
+
+**Harmony** (`core/theory.py`). Chord symbols are parsed into pitch sets, so
+each per-bar prompt carries actual notes rather than a symbol the model has to
+interpret: `Chord Am9. Chord tones: A C E G B. Scale: A B C D E F# G. Colour
+notes: D F#. Avoid landing on: F. Your register this bar: MIDI 59-96.`
+Unparseable symbols and `N.C.` mean "no fixed harmony", not an error.
+
+**Registers.** Each player is given a slice of its range so five instruments
+do not crowd the same octave — keys low and wide, flute at the top. A soloist
+gets a wider window than an accompanist.
+
+**Articulations** (`core/articulation.py`). One table, three consumers: the
+prompts describe the options, MIDI export maps them to real soundfont presets,
+and the browser approximates them with per-articulation envelopes. A violin
+marked `pizz` genuinely switches to the pizzicato patch (GM 45) and back.
+
+| Instrument | Voices |
+|---|---|
+| violin | sustain, pizz, tremolo, harp |
+| flute | flute, recorder, pan flute |
+| guitar | clean, nylon, palm mute, harmonics, 12-string, overdrive |
+| keys | grand, Rhodes, FM electric, harpsichord, bright |
+| drums | normal, ghost, accent — plus the kit itself |
+
+Any melodic instrument may also use `staccato`, `accent` or `ghost`, which
+reshape a note without changing its timbre.
+
+The frontend's copy of this table is **generated**, not written twice:
+`api/scripts/export_voices.py` emits `web/lib/audio/voices.generated.ts`, so
+the browser and the MIDI exporter cannot drift apart.
+
+**The kit** (`core/kit.py`). 23 named surfaces mapped to General MIDI, each
+with the velocity it is normally struck at — a `ghost_snare` is the same drum
+as a `snare` at velocity 28. Aliases absorb what a model actually writes
+(`bass drum`, `hihat`, `rimshot`). Unknown names are dropped rather than
+silently turned into a kick.
 
 ## External Integrations
 

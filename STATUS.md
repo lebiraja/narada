@@ -1,5 +1,23 @@
 # Status
 
+## [2026-09-14 07:35] — Instruments gained real musical capability
+**What:** Three new modules. `core/theory.py` parses chord symbols into chord tones, modes, colour notes and avoid-notes, and assigns each player a register slice — every per-bar prompt now carries actual pitch names instead of a bare chord symbol. `core/articulation.py` gives each instrument real voices (violin: pizz/tremolo/harp; guitar: palm-mute/nylon/harmonics/12-string; keys: Rhodes/FM/harpsichord; flute: recorder/pan flute) mapped to genuine soundfont presets in MIDI export and per-articulation envelopes in the browser. `core/kit.py` replaces raw GM numbers with 23 named kit pieces, each carrying the velocity it is normally struck at, plus kit selection (brush/jazz/room/standard/orchestra).
+**Why:** Every violin note sounded like the same violin. A note was only pitch/start/dur/vel, so there was no way to pluck, mute, or strike a ghost note — and the drummer was writing GM numbers by hand and getting them wrong.
+**State:** DONE
+**Next:** —
+
+## [2026-09-14 07:30] — Frontend articulation table is generated, not duplicated
+**What:** `api/scripts/export_voices.py` emits `web/lib/audio/voices.generated.ts` from the Python registry. The browser builds one synth per articulation lazily, so a violin switching bowed→pizzicato within a bar is a different sound rather than the same sound quieter.
+**Why:** Hand-maintaining the same table in two languages guarantees drift; the MIDI exporter and the browser must agree on what "pizz" means.
+**State:** DONE
+**Next:** —
+
+## [2026-09-14 07:20] — Renamed to NARADA, pushed to GitHub
+**What:** Renamed throughout (app title, MCP identity, package, page metadata, export filenames, docs) and pushed to github.com/lebiraja/narada. Verified no secret ever entered history.
+**Why:** Project needed its name.
+**State:** DONE
+**Next:** —
+
 ## [2026-09-14 00:30] — Agents composed their own piece; seven real bugs fixed
 **What:** Wired Groq (`openai/gpt-oss-120b`) and ran the real agents end to end. Found and fixed seven failures invisible to fake-provider tests — instrument-name casing, invented instruments, one-bad-note-kills-the-bar, unhandled API errors, ignored retry-after, token saturation, and hardcoded 4/4. Added 28 resilience tests and 7 MCP tests (118 API tests total). Output: `output/Restless Monsoon Night.mp3`, 20 bars in 6/8 composed entirely by the agents.
 **Why:** Everything passed against mocks and failed against a real model on the first call.

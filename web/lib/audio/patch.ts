@@ -30,3 +30,10 @@ export function midiToNote(pitch: number): string {
 export function velToGain(vel: number): number {
   return Math.min(1, Math.max(0, vel / 127));
 }
+
+/** MIDI velocity with defaults applied, since a note may leave it unset. */
+export const DEFAULT_VELOCITY = 90;
+
+export function resolveVelocity(vel: number | null | undefined, fallback?: number): number {
+  return vel ?? fallback ?? DEFAULT_VELOCITY;
+}

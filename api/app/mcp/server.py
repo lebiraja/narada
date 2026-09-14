@@ -12,7 +12,10 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import ValidationError
 
 from app.agents.orchestrator import BandOrchestrator
+from app.core.articulation import allowed, describe_voices
+from app.core.kit import Kit, describe_kit
 from app.core.schema import Bar, BarPart, Instrument, Note, Patch, SectionCue
+from app.core.theory import describe_harmony
 from app.core.session import JamSession, SessionStore
 
 
@@ -101,9 +104,14 @@ async def play_bar(
 
     Args:
         instrument: drums, keys, guitar, flute or violin.
-        notes: [{"pitch": 0-127, "start": 0.0-0.999, "dur": bars, "vel": 1-127}]
+        notes: for melodic instruments,
+            [{"pitch": 0-127, "start": 0.0-0.999, "dur": bars, "vel": 1-127,
+              "articulation": optional, "slur": optional}]
+            For drums, name the kit piece instead of a pitch:
+            [{"piece": "kick", "start": 0.0, "dur": 0.1, "vel": optional}]
             start is a fraction of the bar (0.0 is the downbeat, 0.5 halfway)
             and dur is measured in bars (0.25 is one beat in 4/4).
+            Call `band_reference` to see the kit pieces and articulations.
         bar: bar index; defaults to the band's current position.
         chord: harmony for this bar, e.g. "Am9". Worth setting — the AI
             players read it when they fill in around you.
@@ -187,6 +195,61 @@ async def band_play(direction: str, bars: int = 4, chords: list[str] | None = No
 
     await get_store().save(session)
     return f"band played {bars} bars through bar {session.next_bar - 1}"
+
+
+@mcp.tool()
+async def band_reference(instrument: str | None = None, chord: str | None = None) -> str:
+    """What an instrument can play: its articulations, kit pieces and the harmony.
+
+    Args:
+        instrument: drums, keys, guitar, flute or violin. Omit for all five.
+        chord: optional chord symbol, e.g. "Am9" — returns its chord tones,
+            scale, colour notes and which notes to avoid landing on.
+    """
+    if instrument:
+        try:
+            targets = [Instrument(instrument)]
+        except ValueError:
+            known = ", ".join(i.value for i in Instrument)
+            return f"unknown instrument {instrument!r}. The band is: {known}"
+    else:
+        targets = list(Instrument)
+
+    sections: list[str] = []
+    for target in targets:
+        if target is Instrument.DRUMS:
+            sections.append(
+                f"drums — name a kit piece instead of a pitch:\n{describe_kit()}\n\n"
+                f"how to strike them:\n{describe_voices(target)}\n\n"
+                f"kits: {', '.join(k.value for k in Kit)}"
+            )
+        else:
+            sections.append(f"{target.value} — articulations:\n{describe_voices(target)}")
+        if chord:
+            harmony = describe_harmony(chord, target)
+            if harmony:
+                sections.append(f"  {harmony}")
+
+    return "\n\n".join(sections)
+
+
+@mcp.tool()
+async def band_set_kit(kit: str) -> str:
+    """Put the drummer behind a different kit.
+
+    Args:
+        kit: standard, room, jazz, brush or orchestra. Brushes suit a ballad;
+            jazz is lighter and ride-forward; room has more ambience.
+    """
+    try:
+        chosen = Kit(kit.strip().lower())
+    except ValueError:
+        return f"rejected: unknown kit {kit!r}. Available: {', '.join(k.value for k in Kit)}"
+
+    session = await _session()
+    session.steer["kit"] = chosen.value
+    await get_store().save(session)
+    return f"drummer is on the {chosen.value} kit"
 
 
 @mcp.tool()

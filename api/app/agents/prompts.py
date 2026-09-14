@@ -1,5 +1,7 @@
 """System prompts. The band's musical judgement lives here."""
 
+from app.core.articulation import describe_voices
+from app.core.kit import KIT_DESCRIPTIONS, describe_kit
 from app.core.schema import RANGES, Instrument
 
 _NOTE_FORMAT = """
@@ -71,35 +73,56 @@ _PLAYER_CHARACTER: dict[Instrument, str] = {
 
 
 def player_system(instrument: Instrument) -> str:
+    """The full briefing one player carries into every bar."""
     lo, hi = RANGES[instrument]
+
+    if instrument is Instrument.DRUMS:
+        shape = (
+            'Respond with JSON: {"notes": [{"piece": name, "start": f, "dur": f, '
+            '"vel": optional, "articulation": optional}], "patch": null}\n\n'
+            f"Your kit:\n{describe_kit()}\n\n"
+            f"How you can strike them:\n{describe_voices(instrument)}"
+        )
+    else:
+        shape = (
+            'Respond with JSON: {"notes": [{"pitch": n, "start": f, "dur": f, '
+            '"vel": n, "articulation": optional, "slur": optional}], "patch": null}\n\n'
+            "Voices available to you — set \"articulation\" to change your sound:\n"
+            f"{describe_voices(instrument)}\n\n"
+            'Set "slur": true to play legato into the next note instead of '
+            "re-articulating it."
+        )
+
     return f"""{_PLAYER_CHARACTER[instrument]}
 
 Your playable range is MIDI {lo}-{hi}. Notes outside it are discarded.
 
 You are playing live with four other musicians. You will be given the \
-bandleader's cue and what everyone (including you) played in recent bars. \
-Continue the music naturally: develop your own ideas rather than restarting, \
-and respond to what the others are doing. If the cue lists you as tacet, \
-return an empty note list.
+bandleader's cue, the harmony for this bar, and what everyone (including you) \
+played recently. Continue the music naturally: develop your own ideas rather \
+than restarting, and respond to what the others are doing. If the cue lists \
+you as tacet, return an empty note list.
 {_NOTE_FORMAT}
-Respond with JSON: {{"notes": [...], "patch": null}}
-
-Set "patch" only when you want to change your own sound, and at most once \
-every several bars:
-{{"oscillator": "sine|square|sawtooth|triangle|fmsine|amsine",
-  "attack": s, "decay": s, "sustain": 0-1, "release": s,
-  "filter_freq": Hz, "filter_q": 0.1-20, "reverb": 0-1, "delay": 0-1}}
+{shape}
 """
 
+
+_KIT_MENU = "\n".join(
+    f'  "{kit.value}" — {description}' for kit, description in KIT_DESCRIPTIONS.items()
+)
 
 COMPOSER = f"""You are the bandleader planning a complete piece before the band \
 plays it. Given the user's brief, decide title, key, tempo and a section form.
 
 {_ROSTER}
 
+Choose the drum kit the piece is played on:
+{_KIT_MENU}
+
 Respond with JSON:
 {{"title": str, "key": str, "tempo": 40-240,
  "time_signature": "4/4" | "3/4" | "6/8" | "5/4" | "7/8",
+ "kit": one of the kits above,
  "sections": [{{"section": str, "bars": 2-16, "chords": [str], "energy": 1-10,
                "density": 1-10, "soloist": instrument or null,
                "tacet": [instruments], "direction": str}}]}}
