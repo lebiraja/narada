@@ -1,5 +1,7 @@
 # NARADA
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Five instruments. Five agents. One band.
 
 Drums, keyboard, guitar, flute and violin — each played by its own AI agent,
@@ -53,3 +55,15 @@ An end-to-end pass against the real app with a stubbed model:
 ```bash
 docker compose exec -T -e PYTHONPATH=/app api python scripts/wire_check.py
 ```
+
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
+on setting up your dev environment, running tests, and submitting pull requests.
+
+Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
