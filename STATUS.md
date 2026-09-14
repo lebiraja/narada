@@ -1,5 +1,11 @@
 # Status
 
+## [2026-09-14 07:45] — Players cover for a lost bar instead of vanishing
+**What:** A provider failure now makes a sustaining player hold its previous notes slightly quieter, and the drummer keep plain time. See FIXES.md.
+**Why:** Watching a live composition, the keys — the harmonic floor of a band with no bass — dropped out for three bars because their generation was rate-limited.
+**State:** DONE
+**Next:** —
+
 ## [2026-09-14 07:40] — "Tandava": heavy piece in 7/8
 **What:** `api/scripts/compose_tandava.py` — 28 bars in E aeolian, 7/8 at 132bpm, counted 3+2+2. Palm-muted riff doubled across two panned guitar tracks, keys covering bass duty two octaves down (no bass player in the band), drums marking the three accents with ghost notes between, violin entering on tremolo then soaring over the lift. Output: `output/Tandava.mp3`, mastered to -9.0 LUFS.
 **Why:** Nothing so far had used an odd meter or driven from the rhythm section, and the new articulations needed a piece that leaned on them hard.

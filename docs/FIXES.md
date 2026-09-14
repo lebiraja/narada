@@ -2,6 +2,30 @@
 
 A running log of every bug fixed. Newest on top.
 
+## 2026-09-14 — A player that lost a bar fell silent instead of covering
+
+**Symptom:** During a live agent composition the keys dropped out for three
+separate bars mid-piece. With no bass in this band the keys are the harmonic
+floor, so the arrangement briefly had no bottom at all. The drums and guitar
+vanished in other bars the same way.
+
+**Root cause:** `InstrumentAgent.play` returned an empty `BarPart` on
+`GenerationError`. That is the right shape for a first bar with no history,
+but on a rate-limited provider it happens routinely mid-piece, and silence is
+rarely the most musical answer — a player who loses their place covers rather
+than stops.
+
+**Fix:** `_cover()` at `api/app/agents/instrument.py:63`. Sustaining
+instruments hold what they last played at 85% velocity; the drummer falls
+back to plain time (kick, hat, backbeat) rather than repeating a bar, since
+repeating would re-trigger whatever fill was in it. A player with no history
+still returns silence, and a tacet player stays tacet — silence the bandleader
+asked for is not a failure to paper over.
+
+**Verified:** `pytest tests/test_agents.py` — 26 passed, covering the hold,
+the velocity drop, the drum special case, the no-history case and the tacet
+case.
+
 ## 2026-09-14 — Power chords did not parse
 
 **Symptom:** `parse_chord("E5")` returned None, so a bar marked `E5` was

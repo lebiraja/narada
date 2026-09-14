@@ -57,7 +57,7 @@ class InstrumentAgent:
                 system=self._system, user=prompt, schema=PlayerOutput, fast=True
             )
         except GenerationError:
-            return BarPart(instrument=self.instrument, bar=bar_index, notes=[])
+            return self._cover(bar_index, history)
 
         return BarPart(
             instrument=self.instrument,
@@ -65,6 +65,36 @@ class InstrumentAgent:
             notes=output.notes,
             patch=output.patch,
         )
+
+    def _cover(self, bar_index: int, history: list[Bar]) -> BarPart:
+        """What to play when the model does not answer in time.
+
+        A musician who loses their place covers rather than stops. Sustaining
+        instruments hold what they last played, a little quieter; the drummer
+        falls back to plain time, because repeating a bar would re-trigger
+        whatever fill was in it.
+        """
+        last = next(
+            (
+                bar.parts[self.instrument]
+                for bar in reversed(history)
+                if self.instrument in bar.parts and bar.parts[self.instrument].notes
+            ),
+            None,
+        )
+        if last is None:
+            return BarPart(instrument=self.instrument, bar=bar_index, notes=[])
+
+        if self.instrument is Instrument.DRUMS:
+            return BarPart(instrument=self.instrument, bar=bar_index, notes=_KEEP_TIME)
+
+        held = [
+            note.model_copy(
+                update={"bar": bar_index, "vel": max(1, round(note.velocity * 0.85))}
+            )
+            for note in last.notes
+        ]
+        return BarPart(instrument=self.instrument, bar=bar_index, notes=held)
 
     def _build_prompt(
         self, *, bar_index: int, cue: SectionCue, history: list[Bar], chord: str
@@ -95,6 +125,15 @@ class InstrumentAgent:
             f"Write bar {bar_index} for {self.instrument}.",
         ]
         return "\n".join(lines)
+
+
+#: Plain time for a drummer who has lost a bar: pulse, backbeat, nothing clever.
+_KEEP_TIME: list[Note] = [
+    Note(piece="kick", start=0.0, dur=0.1),
+    Note(piece="hat_closed", start=0.25, dur=0.06),
+    Note(piece="snare", start=0.5, dur=0.1),
+    Note(piece="hat_closed", start=0.75, dur=0.06),
+]
 
 
 def _render_history(history: list[Bar]) -> str:

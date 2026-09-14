@@ -261,3 +261,98 @@ class TestHarmonyBriefing:
 
         assert part.notes == []
         assert "no fixed harmony" in provider.calls[0]["user"]
+
+
+class TestFailureIsMusical:
+    """A player that loses a bar should cover, not vanish.
+
+    Provider failures are routine on a rate-limited tier. Returning silence
+    for the keys removes the harmonic floor mid-piece, which is worse than
+    anything the player might have written.
+    """
+
+    async def test_a_sustaining_player_holds_its_previous_notes(self, player_payload):
+        provider = FakeProvider({"PlayerOutput": player_payload})
+        provider.fail_for = {"PlayerOutput"}
+        agent = InstrumentAgent(Instrument.KEYS, provider)
+        previous = Bar(index=4, chord="Am7", parts={
+            Instrument.KEYS: BarPart(
+                instrument=Instrument.KEYS,
+                bar=4,
+                notes=[Note(pitch=57, start=0.0, dur=0.9, vel=60)],
+            )
+        })
+
+        part = await agent.play(
+            bar_index=5, cue=SectionCue(chords=["Am7"]), history=[previous], chord="Am7"
+        )
+
+        assert [n.pitch for n in part.notes] == [57]
+        assert part.bar == 5
+
+    async def test_the_held_bar_is_quieter_than_what_it_repeats(self, player_payload):
+        provider = FakeProvider({"PlayerOutput": player_payload})
+        provider.fail_for = {"PlayerOutput"}
+        previous = Bar(index=0, chord="Am7", parts={
+            Instrument.VIOLIN: BarPart(
+                instrument=Instrument.VIOLIN,
+                bar=0,
+                notes=[Note(pitch=69, start=0.0, dur=0.5, vel=100)],
+            )
+        })
+
+        part = await InstrumentAgent(Instrument.VIOLIN, provider).play(
+            bar_index=1, cue=SectionCue(chords=["Am7"]), history=[previous], chord="Am7"
+        )
+
+        assert part.notes[0].vel < 100
+
+    async def test_drums_keep_time_rather_than_repeat_a_fill(self, player_payload):
+        """Repeating a drum bar re-triggers its fill; a plain pulse is safer."""
+        provider = FakeProvider({"PlayerOutput": player_payload})
+        provider.fail_for = {"PlayerOutput"}
+        previous = Bar(index=0, chord="Am7", parts={
+            Instrument.DRUMS: BarPart(
+                instrument=Instrument.DRUMS,
+                bar=0,
+                notes=[Note(piece="tom_hi", start=i * 0.1, dur=0.08) for i in range(8)],
+            )
+        })
+
+        part = await InstrumentAgent(Instrument.DRUMS, provider).play(
+            bar_index=1, cue=SectionCue(chords=["Am7"]), history=[previous], chord="Am7"
+        )
+
+        assert {n.piece for n in part.notes} <= {"kick", "hat_closed", "snare"}
+
+    async def test_a_player_with_no_history_stays_silent(self, player_payload):
+        """Nothing to hold: silence is the only honest option."""
+        provider = FakeProvider({"PlayerOutput": player_payload})
+        provider.fail_for = {"PlayerOutput"}
+
+        part = await InstrumentAgent(Instrument.FLUTE, provider).play(
+            bar_index=0, cue=SectionCue(chords=["Am7"]), history=[], chord="Am7"
+        )
+
+        assert part.notes == []
+
+    async def test_a_tacet_player_is_not_resurrected_by_a_failure(self, player_payload):
+        """Silence the bandleader asked for must survive a provider failure."""
+        provider = FakeProvider({"PlayerOutput": player_payload})
+        provider.fail_for = {"PlayerOutput"}
+        previous = Bar(index=0, chord="Am7", parts={
+            Instrument.GUITAR: BarPart(
+                instrument=Instrument.GUITAR,
+                bar=0,
+                notes=[Note(pitch=52, start=0.0, dur=0.5, vel=80)],
+            )
+        })
+
+        part = await InstrumentAgent(Instrument.GUITAR, provider).play(
+            bar_index=1,
+            cue=SectionCue(chords=["Am7"], tacet=[Instrument.GUITAR]),
+            history=[previous],
+            chord="Am7",
+        )
+
+        assert part.notes == []
