@@ -36,6 +36,7 @@ class Quality(StrEnum):
     SUS4 = "sus4"
     MAJOR6 = "major6"
     MINOR6 = "minor6"
+    POWER = "power"
 
 
 #: Intervals above the root, in semitones.
@@ -53,6 +54,7 @@ _INTERVALS: dict[Quality, tuple[int, ...]] = {
     Quality.SUS4: (0, 5, 7),
     Quality.MAJOR6: (0, 4, 7, 9),
     Quality.MINOR6: (0, 3, 7, 9),
+    Quality.POWER: (0, 7),  # root and fifth, no third — the chord has no mode
 }
 
 #: The mode a player should draw on over each quality, as intervals.
@@ -70,6 +72,9 @@ _MODES: dict[Quality, tuple[int, ...]] = {
     Quality.AUGMENTED: (0, 2, 4, 6, 8, 10),         # whole tone
     Quality.SUS2: (0, 2, 4, 5, 7, 9, 10),
     Quality.SUS4: (0, 2, 4, 5, 7, 9, 10),
+    # A power chord states no third, so both minor and major thirds are on the
+    # table. Aeolian is the safer default for the music that uses them.
+    Quality.POWER: (0, 2, 3, 5, 7, 8, 10),
 }
 
 #: Scale degrees that clash when sustained over each quality, as intervals.
@@ -87,10 +92,14 @@ _AVOID: dict[Quality, tuple[int, ...]] = {
     Quality.SUS2: (4,),         # the 3rd defeats the suspension
     Quality.SUS4: (4,),
     Quality.MINOR_MAJ7: (),
+    Quality.POWER: (),          # deliberately ambiguous; nothing is wrong
 }
 
 #: Longest first, so "maj7" is not read as "m".
 _QUALITY_TOKENS: tuple[tuple[str, Quality], ...] = (
+    ("5", Quality.POWER),       # power chord: root and fifth only
+    ("add9", Quality.MAJOR),
+    ("madd9", Quality.MINOR),
     ("maj7", Quality.MAJOR7),
     ("maj9", Quality.MAJOR7),
     ("M7", Quality.MAJOR7),
@@ -116,6 +125,8 @@ _QUALITY_TOKENS: tuple[tuple[str, Quality], ...] = (
     ("11", Quality.DOMINANT),
     ("13", Quality.DOMINANT),
     ("m", Quality.MINOR),
+    ("-", Quality.MINOR),       # jazz shorthand: C- is C minor
+    ("\u00f8", Quality.HALF_DIM),   # C{empty} is half-diminished
     ("", Quality.MAJOR),
 )
 
@@ -147,8 +158,12 @@ def parse_chord(symbol: str | None) -> Chord | None:
     root = _ROOTS[root_name]
 
     # Extensions are read before the quality token so "Am9" keeps its 9.
-    extensions = [int(n) for n in re.findall(r"(?:^|[^b#\d])(9|11|13)", body)]
-    extensions += [int(n) for n in re.findall(r"[b#](9|11|13)", body)]
+    # A power chord is exactly root-and-fifth, so it takes none.
+    if body.startswith("5"):
+        extensions: list[int] = []
+    else:
+        extensions = [int(n) for n in re.findall(r"(?:^|[^b#\d])(9|11|13)", body)]
+        extensions += [int(n) for n in re.findall(r"[b#](9|11|13)", body)]
 
     quality = next(
         (q for token, q in _QUALITY_TOKENS if token and body.startswith(token)),

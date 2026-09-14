@@ -1,5 +1,17 @@
 # Status
 
+## [2026-09-14 07:40] — "Tandava": heavy piece in 7/8
+**What:** `api/scripts/compose_tandava.py` — 28 bars in E aeolian, 7/8 at 132bpm, counted 3+2+2. Palm-muted riff doubled across two panned guitar tracks, keys covering bass duty two octaves down (no bass player in the band), drums marking the three accents with ghost notes between, violin entering on tremolo then soaring over the lift. Output: `output/Tandava.mp3`, mastered to -9.0 LUFS.
+**Why:** Nothing so far had used an odd meter or driven from the rhythm section, and the new articulations needed a piece that leaned on them hard.
+**State:** DONE
+**Next:** —
+
+## [2026-09-14 07:38] — Power chords now parse
+**What:** Added `Quality.POWER`, plus `add9`, `C-` and `Cø` to the chord parser. See FIXES.md.
+**Why:** `E5` was unparseable, so any bar using a power chord silently lost all its harmony guidance.
+**State:** DONE
+**Next:** —
+
 ## [2026-09-14 07:35] — Instruments gained real musical capability
 **What:** Three new modules. `core/theory.py` parses chord symbols into chord tones, modes, colour notes and avoid-notes, and assigns each player a register slice — every per-bar prompt now carries actual pitch names instead of a bare chord symbol. `core/articulation.py` gives each instrument real voices (violin: pizz/tremolo/harp; guitar: palm-mute/nylon/harmonics/12-string; keys: Rhodes/FM/harpsichord; flute: recorder/pan flute) mapped to genuine soundfont presets in MIDI export and per-articulation envelopes in the browser. `core/kit.py` replaces raw GM numbers with 23 named kit pieces, each carrying the velocity it is normally struck at, plus kit selection (brush/jazz/room/standard/orchestra).
 **Why:** Every violin note sounded like the same violin. A note was only pitch/start/dur/vel, so there was no way to pluck, mute, or strike a ghost note — and the drummer was writing GM numbers by hand and getting them wrong.

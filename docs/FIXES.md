@@ -2,6 +2,25 @@
 
 A running log of every bug fixed. Newest on top.
 
+## 2026-09-14 — Power chords did not parse
+
+**Symptom:** `parse_chord("E5")` returned None, so a bar marked `E5` was
+treated as having no fixed harmony. Every player lost its chord tones, scale
+and avoid-notes for that bar. Found while writing a heavy piece, where the
+power chord is the most common symbol there is.
+
+**Root cause:** `_QUALITY_TOKENS` had no entry for `5`, and the extension
+regex read the `5` of `E5` as part of a numeric extension. `add9`, the jazz
+shorthand `C-` for minor, and `Cø` for half-diminished were missing too.
+
+**Fix:** Added `Quality.POWER` (root and fifth, no third) at
+`api/app/core/theory.py:38`, with aeolian as its default mode and no
+avoid-notes — a chord that states no third forbids neither. Power chords take
+no extensions. Added `add9`, `-` and `ø` to the token table.
+
+**Verified:** `pytest tests/test_theory.py` — 63 passed, including that a
+power chord contains neither third and that its scale is playable.
+
 ## 2026-09-14 — Seven failures found by running real agents against Groq
 
 Everything below was invisible until real models were pointed at the pipeline.

@@ -196,3 +196,47 @@ class TestHarmonyBriefing:
 
     def test_drums_get_no_harmony_lecture(self):
         assert describe_harmony("Am9", Instrument.DRUMS) == ""
+
+
+class TestHeavySymbols:
+    """Power chords are the commonest symbol in heavy music and used to fail."""
+
+    @pytest.mark.parametrize("symbol", ["E5", "A5", "Bb5", "C#5"])
+    def test_power_chords_parse(self, symbol):
+        assert parse_chord(symbol).quality is Quality.POWER
+
+    def test_a_power_chord_is_root_and_fifth_only(self):
+        assert chord_tones(parse_chord("E5")) == {4, 11}
+
+    def test_a_power_chord_states_no_third(self):
+        tones = chord_tones(parse_chord("E5"))
+
+        assert 7 not in tones  # no G, no major third either
+        assert 8 not in tones
+
+    def test_a_power_chord_forbids_nothing(self):
+        """With no third stated, neither third is wrong."""
+        assert avoid_tones(parse_chord("A5")) == set()
+
+    def test_a_power_chord_takes_no_extensions(self):
+        assert parse_chord("E5").extensions == []
+
+    @pytest.mark.parametrize(
+        ("symbol", "quality"),
+        [
+            ("Cadd9", Quality.MAJOR),
+            ("C-", Quality.MINOR),
+            ("Cø", Quality.HALF_DIM),
+        ],
+    )
+    def test_other_common_shorthands(self, symbol, quality):
+        assert parse_chord(symbol).quality is quality
+
+    def test_add9_contributes_its_ninth(self):
+        assert 2 in chord_tones(parse_chord("Cadd9"))
+
+    def test_a_power_chord_scale_is_playable(self):
+        chord = parse_chord("E5")
+
+        assert chord_tones(chord) <= scale_for(chord)
+        assert len(scale_for(chord)) >= 7
