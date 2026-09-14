@@ -203,3 +203,61 @@ async def test_orchestrator_defaults_to_playing_the_whole_band_at_once(player_pa
     orchestrator = BandOrchestrator(provider, max_concurrency=5)
 
     assert orchestrator._gate._value == 5
+
+
+class TestHarmonyBriefing:
+    """The theory module exists so prompts carry notes, not just a symbol."""
+
+    async def test_a_player_is_told_the_actual_notes(self):
+        provider = FakeProvider({"PlayerOutput": {"notes": [], "patch": None}})
+        agent = InstrumentAgent(Instrument.VIOLIN, provider)
+
+        await agent.play(
+            bar_index=0, cue=SectionCue(chords=["Am9"]), history=[], chord="Am9"
+        )
+
+        prompt = provider.calls[0]["user"]
+        assert "A C E G B" in prompt
+        assert "Avoid landing on" in prompt
+
+    async def test_the_soloist_is_given_a_wider_register(self):
+        provider = FakeProvider({"PlayerOutput": {"notes": [], "patch": None}})
+
+        await InstrumentAgent(Instrument.FLUTE, provider).play(
+            bar_index=0,
+            cue=SectionCue(chords=["Am9"], soloist=Instrument.FLUTE),
+            history=[],
+            chord="Am9",
+        )
+        solo_prompt = provider.calls[0]["user"]
+
+        provider.calls.clear()
+        await InstrumentAgent(Instrument.FLUTE, provider).play(
+            bar_index=0,
+            cue=SectionCue(chords=["Am9"], soloist=Instrument.VIOLIN),
+            history=[],
+            chord="Am9",
+        )
+        support_prompt = provider.calls[0]["user"]
+
+        assert solo_prompt != support_prompt
+        assert "register" in solo_prompt.lower()
+
+    async def test_the_drummer_gets_no_harmony_lecture(self):
+        provider = FakeProvider({"PlayerOutput": {"notes": [], "patch": None}})
+
+        await InstrumentAgent(Instrument.DRUMS, provider).play(
+            bar_index=0, cue=SectionCue(chords=["Am9"]), history=[], chord="Am9"
+        )
+
+        assert "Chord tones" not in provider.calls[0]["user"]
+
+    async def test_an_unparseable_chord_does_not_break_the_prompt(self):
+        provider = FakeProvider({"PlayerOutput": {"notes": [], "patch": None}})
+
+        part = await InstrumentAgent(Instrument.KEYS, provider).play(
+            bar_index=0, cue=SectionCue(chords=["N.C."]), history=[], chord="N.C."
+        )
+
+        assert part.notes == []
+        assert "no fixed harmony" in provider.calls[0]["user"]

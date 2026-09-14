@@ -159,3 +159,131 @@ describe("BandEngine", () => {
     expect(seen).toHaveLength(before);
   });
 });
+
+describe("BandEngine with articulated notes", () => {
+  let engine: InstanceType<typeof BandEngine>;
+
+  beforeEach(async () => {
+    mock.triggered.length = 0;
+    mock.repeats.length = 0;
+    vi.clearAllMocks();
+    engine = new BandEngine();
+    await engine.init();
+  });
+
+  it("plays a drum note written as a named kit piece", async () => {
+    await engine.playSong(
+      song([
+        bar(0, {
+          drums: {
+            instrument: "drums",
+            bar: 0,
+            notes: [{ pitch: -1, start: 0, dur: 0.1, vel: null, piece: "kick" }],
+            patch: null,
+          },
+        }),
+      ]),
+    );
+
+    expect(mock.triggered).toHaveLength(1);
+    expect(mock.triggered[0].note).toBe("C2"); // GM 36
+  });
+
+  it("uses a kit piece's own velocity when the note gives none", async () => {
+    await engine.playSong(
+      song([
+        bar(0, {
+          drums: {
+            instrument: "drums",
+            bar: 0,
+            notes: [
+              { pitch: -1, start: 0, dur: 0.1, vel: null, piece: "snare" },
+              { pitch: -1, start: 0.5, dur: 0.1, vel: null, piece: "ghost_snare" },
+            ],
+            patch: null,
+          },
+        }),
+      ]),
+    );
+
+    const [snare, ghost] = mock.triggered;
+    expect(ghost.velocity).toBeLessThan(snare.velocity);
+  });
+
+  it("skips a drum note naming a piece that does not exist", async () => {
+    await engine.playSong(
+      song([
+        bar(0, {
+          drums: {
+            instrument: "drums",
+            bar: 0,
+            notes: [{ pitch: -1, start: 0, dur: 0.1, vel: null, piece: "gong" }],
+            patch: null,
+          },
+        }),
+      ]),
+    );
+
+    expect(mock.triggered).toHaveLength(0);
+  });
+
+  it("shortens a pizzicato note", async () => {
+    const withArticulation = async (articulation: string | null) => {
+      mock.triggered.length = 0;
+      await engine.playSong(
+        song([
+          bar(0, {
+            violin: {
+              instrument: "violin",
+              bar: 0,
+              notes: [{ pitch: 69, start: 0, dur: 0.5, vel: 90, articulation }],
+              patch: null,
+            },
+          }),
+        ]),
+      );
+      return mock.triggered[0].duration;
+    };
+
+    expect(await withArticulation("pizz")).toBeLessThan(await withArticulation(null));
+  });
+
+  it("sounds guitar harmonics an octave above where they are written", async () => {
+    await engine.playSong(
+      song([
+        bar(0, {
+          guitar: {
+            instrument: "guitar",
+            bar: 0,
+            notes: [
+              { pitch: 60, start: 0, dur: 0.25, vel: 90, articulation: "harmonics" },
+            ],
+            patch: null,
+          },
+        }),
+      ]),
+    );
+
+    expect(mock.triggered[0].note).toBe("C5"); // written C4
+  });
+
+  it("plays an unknown articulation as the normal voice", async () => {
+    await engine.playSong(
+      song([
+        bar(0, {
+          flute: {
+            instrument: "flute",
+            bar: 0,
+            notes: [
+              { pitch: 72, start: 0, dur: 0.25, vel: 90, articulation: "slap-bass" },
+            ],
+            patch: null,
+          },
+        }),
+      ]),
+    );
+
+    expect(mock.triggered).toHaveLength(1);
+    expect(mock.triggered[0].note).toBe("C5");
+  });
+});
