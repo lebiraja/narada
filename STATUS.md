@@ -1,5 +1,11 @@
 # Status
 
+## [2026-09-14 07:50] — Agents composed with the new vocabulary: "Evening Whisper"
+**What:** 18 bars, D minor, 6/8 at 70bpm, written entirely by the agents. They used the articulation system unprompted: violin bowed for 12 bars then pizzicato for the whole closing section (23 pizz notes), keys on Rhodes (35 notes) with occasional bright stabs, 39 ghost notes, and seven named kit pieces including `kick_soft` and `snare_roll` — neither of which appeared in any example I wrote. Output: `output/Evening Whisper.mp3`.
+**Why:** The instrument work needed proving by the band itself, not by a hand-written demo.
+**State:** DONE
+**Next:** Live jam still needs a paid tier — 742s for 18 bars on the free tier.
+
 ## [2026-09-14 07:45] — Players cover for a lost bar instead of vanishing
 **What:** A provider failure now makes a sustaining player hold its previous notes slightly quieter, and the drummer keep plain time. See FIXES.md.
 **Why:** Watching a live composition, the keys — the harmonic floor of a band with no bass — dropped out for three bars because their generation was rate-limited.
