@@ -24,6 +24,11 @@ class Articulation(StrEnum):
     TWELVE_STRING = "twelve_string"
     CLEAN = "clean"
     OVERDRIVE = "overdrive"
+    # Bass
+    FINGER = "finger"
+    PICK = "pick"
+    SLAP = "slap"
+    UPRIGHT = "upright"
     # Winds
     RECORDER = "recorder"
     PAN_FLUTE = "pan_flute"
@@ -172,6 +177,50 @@ VOICES: dict[Instrument, tuple[Voice, ...]] = {
             program=29,
             browser={"oscillator": "sawtooth", "attack": 0.003, "decay": 0.2,
                      "sustain": 0.6, "release": 0.5, "filter_freq": 3500},
+        ),
+    ),
+    Instrument.BASS: (
+        Voice(
+            Articulation.FINGER,
+            "fingerstyle electric — round, warm, sits under everything",
+            bank=0,
+            program=33,
+            browser={"oscillator": "triangle", "attack": 0.008, "decay": 0.3,
+                     "sustain": 0.6, "release": 0.3, "filter_freq": 1200},
+        ),
+        Voice(
+            Articulation.PICK,
+            "played with a pick — brighter attack, drives a rock groove",
+            bank=0,
+            program=34,
+            browser={"oscillator": "sawtooth", "attack": 0.003, "decay": 0.25,
+                     "sustain": 0.5, "release": 0.25, "filter_freq": 2000},
+        ),
+        Voice(
+            Articulation.SLAP,
+            "slap — percussive pop for funk, use with restraint",
+            bank=0,
+            program=36,
+            duration_scale=0.7,
+            browser={"oscillator": "square", "attack": 0.002, "decay": 0.15,
+                     "sustain": 0.3, "release": 0.2, "filter_freq": 3000},
+        ),
+        Voice(
+            Articulation.PALM_MUTE,
+            "palm-muted — short, thuddy, tight with the kick",
+            bank=0,
+            program=33,
+            duration_scale=0.4,
+            browser={"oscillator": "triangle", "attack": 0.004, "decay": 0.1,
+                     "sustain": 0.0, "release": 0.08, "filter_freq": 800},
+        ),
+        Voice(
+            Articulation.UPRIGHT,
+            "upright bass — woody and soft, for jazz and ballads",
+            bank=0,
+            program=32,
+            browser={"oscillator": "sine", "attack": 0.01, "decay": 0.4,
+                     "sustain": 0.3, "release": 0.4, "filter_freq": 1000},
         ),
     ),
     Instrument.KEYS: (

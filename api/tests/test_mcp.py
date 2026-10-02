@@ -152,7 +152,7 @@ async def test_manual_and_generated_bars_share_a_timeline(wired):
 
     assert state["next_bar"] == 2
     assert list(state["recent_bars"][0]["parts"]) == ["flute"]
-    assert len(state["recent_bars"][1]["parts"]) == 5
+    assert len(state["recent_bars"][1]["parts"]) == 6
 
 
 async def test_play_bar_records_the_chord(wired):
@@ -189,7 +189,7 @@ async def test_rejecting_an_unknown_instrument_names_the_band(wired):
     result = await server.play_bar("trombone", _notes(60))
 
     assert "trombone" in result
-    assert "drums, keys, guitar, flute, violin" in result
+    assert "drums, bass, keys, guitar, flute, violin" in result
 
 
 async def test_rejecting_a_bad_note_explains_the_units(wired):

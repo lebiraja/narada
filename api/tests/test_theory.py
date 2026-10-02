@@ -240,3 +240,17 @@ class TestHeavySymbols:
 
         assert chord_tones(chord) <= scale_for(chord)
         assert len(scale_for(chord)) >= 7
+
+
+def test_keys_stay_clear_of_the_bass_lowest_octave():
+    bass_low, _ = register_for(Instrument.BASS)
+
+    keys_low, _ = register_for(Instrument.KEYS)
+
+    assert keys_low >= bass_low + 12
+
+
+def test_bass_harmony_names_the_root_for_strong_beats():
+    text = describe_harmony("Am7", Instrument.BASS)
+
+    assert "root (A) or fifth on strong beats" in text

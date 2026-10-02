@@ -1,8 +1,10 @@
 import pytest
 from pydantic import BaseModel
 
+from app.core.limits import limits
 from app.core.provider import GenerationError
 from app.core.session import JamSession
+from app.main import app
 
 
 class FakeProvider:
@@ -84,3 +86,32 @@ class FakeStore:
 @pytest.fixture
 def store() -> FakeStore:
     return FakeStore()
+
+
+class FakeRedis:
+    """Just enough of redis.asyncio.Redis for the rate-limit counters."""
+
+    def __init__(self) -> None:
+        self.values: dict[str, int] = {}
+        self.ttls: dict[str, int] = {}
+
+    async def incr(self, key: str) -> int:
+        self.values[key] = self.values.get(key, 0) + 1
+        return self.values[key]
+
+    async def decr(self, key: str) -> int:
+        self.values[key] = self.values.get(key, 0) - 1
+        return self.values[key]
+
+    async def expire(self, key: str, seconds: int) -> None:
+        self.ttls[key] = seconds
+
+
+@pytest.fixture(autouse=True)
+def offline(monkeypatch) -> FakeRedis:
+    """No Redis and no model for any test: limits count in memory, and the
+    shared provider the lifespan would build is a fake."""
+    redis = FakeRedis()
+    monkeypatch.setattr(limits, "_redis", redis)
+    monkeypatch.setattr(app.state, "provider", FakeProvider(), raising=False)
+    return redis

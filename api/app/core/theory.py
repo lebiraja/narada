@@ -251,10 +251,11 @@ def extension_tones(chord: Chord | None) -> set[int]:
     return {(chord.root + mode[(e - 1) % 7]) % 12 for e in chord.extensions}
 
 
-#: Which slice of its range each player should occupy so five instruments do
+#: Which slice of its range each player should occupy so six instruments do
 #: not all crowd the middle. Fractions of the instrument's full range.
 _REGISTERS: dict[Instrument, tuple[float, float]] = {
-    Instrument.KEYS: (0.15, 0.70),     # wide, holds the harmony
+    Instrument.BASS: (0.0, 0.70),      # the low end, up to about A3
+    Instrument.KEYS: (0.32, 0.70),     # chords above C3, clear of the bass
     Instrument.GUITAR: (0.10, 0.60),   # below the melody
     Instrument.VIOLIN: (0.20, 0.80),
     Instrument.FLUTE: (0.25, 0.85),    # the top voice
@@ -307,5 +308,10 @@ def describe_harmony(symbol: str, instrument: Instrument, *, soloing: bool = Fal
     avoid = avoid_tones(chord)
     if avoid:
         lines.append(f"Avoid landing on: {pitch_names(avoid)}.")
+    if instrument is Instrument.BASS:
+        lines.append(
+            f"Land the root ({NAMES[chord.bass % 12]}) or fifth on strong beats, "
+            "approach the next chord by step, and lock to the kick."
+        )
     lines.append(register)
     return " ".join(lines)

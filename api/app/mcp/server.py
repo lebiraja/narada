@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from app.agents.orchestrator import BandOrchestrator
 from app.core.articulation import allowed, describe_voices
 from app.core.kit import Kit, describe_kit
-from app.core.schema import Bar, BarPart, Instrument, Note, Patch, SectionCue
+from app.core.schema import Bar, BarPart, Feel, Instrument, Note, Patch, SectionCue
 from app.core.theory import describe_harmony
 from app.core.session import JamSession, SessionStore
 
@@ -103,7 +103,7 @@ async def play_bar(
     """Write one bar for one instrument.
 
     Args:
-        instrument: drums, keys, guitar, flute or violin.
+        instrument: drums, bass, keys, guitar, flute or violin.
         notes: for melodic instruments,
             [{"pitch": 0-127, "start": 0.0-0.999, "dur": bars, "vel": 1-127,
               "articulation": optional, "slur": optional}]
@@ -153,7 +153,7 @@ async def set_patch(instrument: str, patch: dict) -> str:
     """Design an instrument's synth voice.
 
     Args:
-        instrument: drums, keys, guitar, flute or violin.
+        instrument: drums, bass, keys, guitar, flute or violin.
         patch: {"oscillator": "sine|square|sawtooth|triangle|fmsine|amsine",
                 "attack": s, "decay": s, "sustain": 0-1, "release": s,
                 "filter_freq": Hz, "filter_q": 0.1-20, "reverb": 0-1, "delay": 0-1}
@@ -188,7 +188,10 @@ async def band_play(direction: str, bars: int = 4, chords: list[str] | None = No
 
     for _ in range(max(1, min(16, bars))):
         played = await orchestrator.play_bar(
-            bar_index=session.next_bar, cue=cue, history=session.history
+            bar_index=session.next_bar,
+            cue=cue,
+            history=session.history,
+            feel=Feel(key=session.key, tempo=session.tempo, time_signature=session.time_signature),
         )
         session.remember(played)
         session.next_bar += 1
@@ -202,7 +205,7 @@ async def band_reference(instrument: str | None = None, chord: str | None = None
     """What an instrument can play: its articulations, kit pieces and the harmony.
 
     Args:
-        instrument: drums, keys, guitar, flute or violin. Omit for all five.
+        instrument: drums, bass, keys, guitar, flute or violin. Omit for all six.
         chord: optional chord symbol, e.g. "Am9" — returns its chord tones,
             scale, colour notes and which notes to avoid landing on.
     """

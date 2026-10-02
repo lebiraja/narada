@@ -4,9 +4,8 @@ Every case here was found by running real agents against a real provider.
 """
 
 import pytest
-from openai import APIError, RateLimitError
-from pydantic import ValidationError
 
+from app.agents.instrument import PlayerOutput
 from app.core.provider import MAX_RETRY_WAIT, GenerationError, LLMProvider, retry_after
 from app.core.schema import (
     BarPart,
@@ -16,7 +15,6 @@ from app.core.schema import (
     coerce_optional_instrument,
     salvage_notes,
 )
-from app.agents.instrument import PlayerOutput
 
 
 class TestInstrumentAliases:
@@ -206,7 +204,24 @@ class TestProviderRetry:
         with pytest.raises(GenerationError):
             await provider.structured(system="s", user="u", schema=SectionCue)
 
-        assert client.calls == 2  # default attempts
+        assert client.calls == 3  # default attempts
+
+    async def test_a_malformed_reply_is_retried_with_the_reason(self, monkeypatch):
+        class Recording(FlakyClient):
+            async def create(self, **kwargs):
+                self.calls += 1
+                self.prompts.append(kwargs["messages"][1]["content"])
+                return _response('{"chords": "x" }' if self.calls == 1 else '{"chords": ["Am7"]}')
+
+        client = Recording(failures=0)
+        client.prompts = []
+        monkeypatch.setattr("asyncio.sleep", _no_sleep)
+
+        await LLMProvider(client=client).structured(system="s", user="u", schema=SectionCue)
+
+        assert client.prompts[0] == "u"
+        assert client.prompts[1].startswith("u\n\nYour previous reply was rejected: ")
+        assert "chords" in client.prompts[1]
 
     async def test_an_empty_body_counts_as_a_failure(self, monkeypatch):
         class Empty(FlakyClient):

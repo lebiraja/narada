@@ -3,7 +3,7 @@ import pytest
 from app.agents.bandleader import Bandleader, chord_for_bar, resolve_soloist
 from app.agents.instrument import InstrumentAgent, _render_history
 from app.agents.orchestrator import BandOrchestrator
-from app.core.schema import BAND, Bar, BarPart, Instrument, Note, SectionCue
+from app.core.schema import BAND, Bar, BarPart, Feel, Instrument, Note, SectionCue
 from tests.conftest import FakeProvider
 
 
@@ -37,14 +37,29 @@ def test_render_history_is_compact_and_skips_silent_parts():
         },
     )
 
-    rendered = _render_history([bar])
+    rendered = _render_history([bar], 16)
 
-    assert "keys: 69@0.00/0.50" in rendered
+    assert "keys: 69@0/8" in rendered
     assert "flute" not in rendered
 
 
 def test_render_history_handles_first_bar():
-    assert "none" in _render_history([])
+    assert "none" in _render_history([], 16)
+
+
+def test_render_history_counts_in_the_bars_own_steps():
+    bar = Bar(
+        index=0,
+        parts={
+            Instrument.KEYS: BarPart(
+                instrument=Instrument.KEYS, bar=0, notes=[Note(pitch=60, start=0.5, dur=2 / 14)]
+            )
+        },
+    )
+
+    rendered = _render_history([bar], 14)
+
+    assert "keys: 60@7/2" in rendered
 
 
 async def test_player_returns_notes(player_payload):
@@ -101,6 +116,113 @@ async def test_player_prompt_mentions_the_solo():
     assert "You have the solo" in provider.calls[0]["user"]
 
 
+@pytest.mark.parametrize(
+    ("signature", "expected"),
+    [
+        ("4/4", "4/4 at 96 bpm — 16 steps per bar, 4 steps per quarter-note beat."),
+        ("6/8", "6/8 at 96 bpm — 12 steps per bar, 4 steps per quarter-note beat."),
+        ("7/8", "7/8 at 96 bpm — 14 steps per bar, 4 steps per quarter-note beat; counted 3+2+2"),
+    ],
+)
+async def test_player_prompt_carries_key_and_meter(signature, expected):
+    provider = FakeProvider({"PlayerOutput": {"notes": [], "patch": None}})
+
+    await InstrumentAgent(Instrument.KEYS, provider).play(
+        bar_index=0,
+        cue=SectionCue(chords=["Am7"]),
+        history=[],
+        chord="Am7",
+        feel=Feel(key="E minor", tempo=96, time_signature=signature),
+    )
+
+    prompt = provider.calls[0]["user"]
+    assert "Key: E minor." in prompt
+    assert expected in prompt
+
+
+async def test_player_prompt_names_the_next_chord():
+    provider = FakeProvider({"PlayerOutput": {"notes": [], "patch": None}})
+
+    await InstrumentAgent(Instrument.KEYS, provider).play(
+        bar_index=1, cue=SectionCue(chords=["Am7", "Dm7", "G7"]), history=[], chord="Dm7"
+    )
+
+    assert "Chord this bar: Dm7; next bar: G7." in provider.calls[0]["user"]
+
+
+async def test_player_prompt_does_not_guess_past_the_section():
+    provider = FakeProvider({"PlayerOutput": {"notes": [], "patch": None}})
+
+    await InstrumentAgent(Instrument.KEYS, provider).play(
+        bar_index=3,
+        cue=SectionCue(chords=["Am7", "Dm7"]),
+        history=[],
+        chord="Dm7",
+        position=(3, 4),
+    )
+
+    prompt = provider.calls[0]["user"]
+    assert "Bar 4 of 4 in this section." in prompt
+    assert "next bar: (new section)." in prompt
+
+
+async def test_player_steps_convert_on_the_bars_own_grid():
+    provider = FakeProvider(
+        {"PlayerOutput": {"notes": [{"pitch": 60, "step": 7, "len": 2, "vel": 90}]}}
+    )
+
+    part = await InstrumentAgent(Instrument.KEYS, provider).play(
+        bar_index=0,
+        cue=SectionCue(chords=["Am7"]),
+        history=[],
+        chord="Am7",
+        feel=Feel(time_signature="7/8"),
+    )
+
+    assert part.notes[0].start == 0.5
+    assert part.notes[0].dur == 2 / 14
+
+
+async def test_player_step_past_the_bar_is_discarded():
+    provider = FakeProvider(
+        {
+            "PlayerOutput": {
+                "notes": [
+                    {"pitch": 60, "step": 14, "len": 1},
+                    {"pitch": 62, "step": 13, "len": 99},
+                ]
+            }
+        }
+    )
+
+    part = await InstrumentAgent(Instrument.KEYS, provider).play(
+        bar_index=0,
+        cue=SectionCue(chords=["Am7"]),
+        history=[],
+        chord="Am7",
+        feel=Feel(time_signature="7/8"),
+    )
+
+    assert [n.pitch for n in part.notes] == [62]
+    assert part.notes[0].dur == 4.0
+
+
+async def test_player_still_accepts_legacy_fractional_notes():
+    provider = FakeProvider(
+        {"PlayerOutput": {"notes": [{"pitch": 60, "start": 0.333, "dur": 0.25}]}}
+    )
+
+    part = await InstrumentAgent(Instrument.KEYS, provider).play(
+        bar_index=0,
+        cue=SectionCue(chords=["Am7"]),
+        history=[],
+        chord="Am7",
+        feel=Feel(time_signature="3/4"),
+    )
+
+    assert (part.notes[0].start, part.notes[0].dur) == (0.333, 0.25)
+
+
 async def test_bandleader_falls_back_to_previous_cue_on_failure(cue_payload):
     provider = FakeProvider({"SectionCue": cue_payload})
     provider.fail_for = {"SectionCue"}
@@ -110,6 +232,16 @@ async def test_bandleader_falls_back_to_previous_cue_on_failure(cue_payload):
     cue = await leader.next_cue(bar_index=8, key="A minor", previous=previous, steer={})
 
     assert cue.section == "chorus"
+
+
+async def test_bandleader_prompt_carries_tempo_and_meter(cue_payload):
+    provider = FakeProvider({"SectionCue": cue_payload})
+
+    await Bandleader(provider).next_cue(
+        bar_index=0, key="E minor", previous=None, steer={}, tempo=132, time_signature="7/8"
+    )
+
+    assert "E minor, 7/8 at 132 bpm" in provider.calls[0]["user"]
 
 
 async def test_bandleader_has_a_default_when_there_is_no_previous_cue(cue_payload):
@@ -141,6 +273,19 @@ async def test_orchestrator_composes_a_song_from_the_plan(song_plan_payload, pla
     assert song.tempo == 92
     assert len(song.bars) == 2
     assert [bar.chord for bar in song.bars] == ["Am7", "Dm7"]
+
+
+async def test_orchestrator_tells_players_the_key_tempo_and_place(
+    song_plan_payload, player_payload
+):
+    provider = FakeProvider({"SongPlan": song_plan_payload, "PlayerOutput": player_payload})
+
+    await BandOrchestrator(provider).compose("something rainy")
+
+    prompts = [call["user"] for call in provider.calls if call["schema"] == "PlayerOutput"]
+    assert f"Key: {song_plan_payload['key']}." in prompts[0]
+    assert "at 92 bpm" in prompts[0]
+    assert "next bar: (new section)." in prompts[-1]
 
 
 async def test_orchestrator_hoists_agent_patches_onto_the_song(song_plan_payload, player_payload):
@@ -356,3 +501,130 @@ class TestFailureIsMusical:
         )
 
         assert part.notes == []
+
+
+_BRIEF = {
+    "groove": {"kick": [0, 6, 10], "snare": [6], "hat": [0, 2, 4, 6, 8, 10, 12]},
+    "comp_rhythm": [0, 6, 10],
+    "motif": [{"step": 0, "len": 4, "degree": 1}, {"step": 6, "len": 2, "degree": 5}],
+    "motif_development": "sequence up a step",
+    "roles": {"violin": {"register": "high"}},
+    "energy_curve": [4, 6],
+    "call_response": [{"bar": 0, "lead": "violin"}],
+}
+
+
+class TestScoreFirstArrangement:
+    """The rhythm section plays to a shared brief; the melody hears it play."""
+
+    def test_a_garbled_brief_degrades_item_by_item(self):
+        cue = SectionCue(
+            chords=["Am7"],
+            brief={
+                "groove": {"kick": [0, "x", 99, 8], "cowbell": [1]},
+                "motif": [{"step": 0, "degree": 3}, {"degree": 12}, "nonsense"],
+                "roles": {"tuba": {"register": "low"}, "keys": {"register": "sky"}},
+                "energy_curve": [3, 42, "loud"],
+                "call_response": [{"bar": 1, "lead": "kazoo"}],
+            },
+        )
+
+        assert cue.brief.groove == {"kick": [0, 8]}
+        assert [n.degree for n in cue.brief.motif] == [3]
+        assert cue.brief.roles == {}
+        assert cue.brief.energy_curve == [3, 10]
+        assert cue.brief.call_response == []
+
+    def test_a_brief_that_is_not_an_object_is_dropped(self):
+        assert SectionCue(chords=["Am7"], brief="play nice").brief is None
+
+    async def test_layer_a_is_told_the_groove(self):
+        provider = FakeProvider({"PlayerOutput": {"notes": [], "patch": None}})
+
+        await BandOrchestrator(provider).play_bar(
+            bar_index=0, cue=SectionCue(chords=["Am7"], brief=_BRIEF), history=[]
+        )
+
+        drums = provider.calls[0]["user"]
+        assert "kick [0, 6, 10]" in drums
+        assert "Comp rhythm (stab on steps): [0, 6, 10]" in provider.calls[2]["user"]
+
+    async def test_layer_b_hears_layer_a_s_current_bar(self, player_payload):
+        provider = FakeProvider({"PlayerOutput": player_payload})
+
+        await BandOrchestrator(provider).play_bar(
+            bar_index=0,
+            cue=SectionCue(chords=["Am7"], brief=_BRIEF),
+            history=[],
+            feel=Feel(key="A minor", tempo=120, time_signature="7/8"),
+            position=(0, 2),
+        )
+
+        rhythm, melody = provider.calls[:4], provider.calls[4:]
+        assert all("Right now the others play" not in c["user"] for c in rhythm)
+        violin = melody[1]["user"]
+        assert "Right now the others play" in violin
+        assert "  keys: 60@0/" in violin
+        assert "Motif (scale degree@step/len): 1@0/4 5@6/2" in violin
+        assert "You lead this bar." in violin
+
+    async def test_bass_is_in_the_rhythm_layer_and_reads_the_bass_rhythm(self):
+        provider = FakeProvider({"PlayerOutput": {"notes": [], "patch": None}})
+
+        await BandOrchestrator(provider).play_bar(
+            bar_index=0,
+            cue=SectionCue(chords=["Am7"], brief={**_BRIEF, "bass_rhythm": [0, 6, 10]}),
+            history=[],
+        )
+
+        bass = provider.calls[1]
+        assert bass["system"].startswith("You are the bassist")
+        assert "Bass rhythm (play on steps): [0, 6, 10]" in bass["user"]
+        assert "Right now the others play" not in bass["user"]
+
+    async def test_compose_stream_yields_the_plan_then_bars_in_order(
+        self, song_plan_payload, player_payload
+    ):
+        from app.agents.bandleader import SongPlan
+
+        provider = FakeProvider({"SongPlan": song_plan_payload, "PlayerOutput": player_payload})
+        orchestrator = BandOrchestrator(provider)
+
+        items = [item async for item in orchestrator.compose_stream("rain")]
+        song = await orchestrator.compose("rain")
+
+        assert isinstance(items[0], SongPlan)
+        assert [bar.index for bar in items[1:]] == [0, 1]
+        assert song.bars == items[1:]
+
+    async def test_a_cover_fades_to_silence_after_two_bars(self):
+        provider = FakeProvider({"PlayerOutput": {"notes": [], "patch": None}})
+        provider.fail_for = {"PlayerOutput"}
+        agent = InstrumentAgent(Instrument.KEYS, provider)
+        previous = Bar(index=0, chord="Am7", parts={
+            Instrument.KEYS: BarPart(
+                instrument=Instrument.KEYS, bar=0, notes=[Note(pitch=57, start=0.0, dur=0.9)]
+            )
+        })
+        cue = SectionCue(chords=["Am7"])
+
+        covered = [
+            await agent.play(bar_index=i, cue=cue, history=[previous], chord="Am7")
+            for i in (1, 2, 3)
+        ]
+
+        assert [len(part.notes) for part in covered] == [1, 1, 0]
+
+    async def test_temperature_follows_the_role(self, player_payload):
+        provider = FakeProvider({"PlayerOutput": player_payload})
+
+        await BandOrchestrator(provider).play_bar(
+            bar_index=0, cue=SectionCue(chords=["Am7"]), history=[]
+        )
+
+        temperatures = {
+            c["system"].split(".")[0]: c["temperature"] for c in provider.calls
+        }
+        assert sorted(temperatures.values()) == [0.5, 0.5, 0.7, 0.7, 0.8, 0.8]
+        assert temperatures["You are the drummer"] == 0.5
+        assert temperatures["You are the bassist"] == 0.5

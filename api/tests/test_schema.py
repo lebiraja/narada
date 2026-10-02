@@ -62,3 +62,19 @@ def test_song_round_trips_through_json():
     restored = Song.model_validate_json(song.model_dump_json())
 
     assert restored.bars[0].parts[Instrument.KEYS].notes[0].pitch == 69
+
+
+def test_bass_aliases_coerce_to_the_bassist():
+    assert Instrument("Bass Guitar") is Instrument.BASS
+    assert Instrument("upright bass") is Instrument.BASS
+
+
+def test_bass_part_drops_pitches_outside_e1_to_g4():
+    part = BarPart(instrument=Instrument.BASS, bar=0, notes=[
+        Note(pitch=27, start=0.0, dur=0.25),
+        Note(pitch=28, start=0.25, dur=0.25),
+        Note(pitch=67, start=0.5, dur=0.25),
+        Note(pitch=68, start=0.75, dur=0.25),
+    ])
+
+    assert [n.pitch for n in part.notes] == [28, 67]

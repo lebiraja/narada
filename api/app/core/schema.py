@@ -3,11 +3,19 @@
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 
 class Instrument(StrEnum):
     DRUMS = "drums"
+    BASS = "bass"
     KEYS = "keys"
     GUITAR = "guitar"
     FLUTE = "flute"
@@ -28,6 +36,13 @@ _ALIASES: dict[str, Instrument] = {
     "drumkit": Instrument.DRUMS,
     "drum kit": Instrument.DRUMS,
     "percussion": Instrument.DRUMS,
+    "bass": Instrument.BASS,
+    "bass guitar": Instrument.BASS,
+    "electric bass": Instrument.BASS,
+    "double bass": Instrument.BASS,
+    "upright": Instrument.BASS,
+    "upright bass": Instrument.BASS,
+    "bassist": Instrument.BASS,
     "keys": Instrument.KEYS,
     "key": Instrument.KEYS,
     "keyboard": Instrument.KEYS,
@@ -78,6 +93,7 @@ BAND: tuple[Instrument, ...] = tuple(Instrument)
 #: Pitch range each instrument can physically play (MIDI note numbers).
 RANGES: dict[Instrument, tuple[int, int]] = {
     Instrument.DRUMS: (35, 81),  # GM percussion map
+    Instrument.BASS: (28, 67),  # E1-G4
     Instrument.KEYS: (21, 108),
     Instrument.GUITAR: (40, 88),
     Instrument.FLUTE: (60, 96),
@@ -105,6 +121,10 @@ class Note(BaseModel):
     piece: str | None = Field(default=None, max_length=24)
     #: Play legato into the next note rather than re-articulating.
     slur: bool = False
+    #: Integer grid position and length a player wrote; the player agent turns
+    #: them into `start`/`dur` once it knows how many steps the bar has.
+    step: int | None = Field(default=None, ge=0)
+    len: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def _needs_a_pitch_or_a_piece(self) -> "Note":
@@ -149,6 +169,14 @@ def salvage_notes(values: Any) -> list[dict[str, Any]]:
             continue
         if pitch is not None and not 0 <= pitch <= 127:
             continue
+        if note.get("step") is not None:
+            try:
+                note["step"] = int(note["step"])
+                note["len"] = max(1, int(note.get("len") or 1))
+            except (TypeError, ValueError):
+                continue
+            if note["step"] < 0:
+                continue
 
         note["start"] = start
         note["dur"] = min(4.0, max(0.01, dur))
@@ -235,11 +263,117 @@ def _resolved_drum(note: Note) -> Note | None:
 
 
 class Bar(BaseModel):
-    """All five parts for a single bar, ready to schedule."""
+    """All six parts for a single bar, ready to schedule."""
 
     index: int = Field(ge=0)
     chord: str = "N.C."
     parts: dict[Instrument, BarPart] = Field(default_factory=dict)
+
+
+def _steps(value: Any) -> list[int]:
+    """Keep the step numbers out of whatever list the leader wrote; drop the rest."""
+    if not isinstance(value, list):
+        return []
+    return sorted({int(v) for v in value if isinstance(v, (int, float)) and 0 <= v < 64})
+
+
+class MotifNote(BaseModel):
+    step: int = Field(ge=0, lt=128)
+    len: int = Field(default=2, ge=1, le=64)
+    degree: int = Field(ge=1, le=7)
+    octave_offset: int = Field(default=0, ge=-2, le=2)
+
+
+class Role(BaseModel, populate_by_name=True):
+    #: "register" in the leader's JSON; renamed because BaseModel owns that name.
+    band: Literal["low", "mid", "high"] = Field(default="mid", alias="register")
+    doubles: Instrument | None = None
+    enters_bar: int = Field(default=0, ge=0)
+
+    @field_validator("doubles", mode="before")
+    @classmethod
+    def _known_doubles(cls, value: Any) -> Any:
+        return coerce_optional_instrument(value)
+
+
+class CallResponse(BaseModel):
+    bar: int = Field(ge=0)
+    lead: Instrument
+
+
+class ArrangementBrief(BaseModel):
+    """The section's shared score: what everyone agrees on before playing.
+
+    Every field is optional and garbage is dropped item by item, so a bad
+    brief degrades to players working from the cue alone.
+    """
+
+    groove: dict[str, list[int]] = Field(default_factory=dict)
+    bass_rhythm: list[int] = Field(default_factory=list)
+    comp_rhythm: list[int] = Field(default_factory=list)
+    motif: list[MotifNote] = Field(default_factory=list, max_length=32)
+    motif_development: str = Field(default="", max_length=200)
+    roles: dict[Instrument, Role] = Field(default_factory=dict)
+    energy_curve: list[int] = Field(default_factory=list, max_length=16)
+    call_response: list[CallResponse] = Field(default_factory=list, max_length=16)
+
+    @field_validator("groove", mode="before")
+    @classmethod
+    def _clean_groove(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return {}
+        return {
+            piece: _steps(steps)
+            for piece, steps in value.items()
+            if piece in ("kick", "snare", "hat")
+        }
+
+    @field_validator("bass_rhythm", "comp_rhythm", mode="before")
+    @classmethod
+    def _clean_steps(cls, value: Any) -> Any:
+        return _steps(value)
+
+    @field_validator("motif", "call_response", mode="before")
+    @classmethod
+    def _drop_bad_items(cls, value: Any, info: ValidationInfo) -> Any:
+        if not isinstance(value, list):
+            return []
+        item = MotifNote if info.field_name == "motif" else CallResponse
+        kept = []
+        for raw in value:
+            try:
+                kept.append(item.model_validate(raw))
+            except ValidationError:
+                continue
+        return kept
+
+    @field_validator("roles", mode="before")
+    @classmethod
+    def _drop_bad_roles(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return {}
+        kept: dict[Instrument, Role] = {}
+        for name, raw in value.items():
+            instrument = coerce_optional_instrument(name)
+            if instrument is None:
+                continue
+            try:
+                kept[instrument] = Role.model_validate(raw)
+            except ValidationError:
+                continue
+        return kept
+
+    @field_validator("energy_curve", mode="before")
+    @classmethod
+    def _clamp_energy(cls, value: Any) -> Any:
+        if not isinstance(value, list):
+            return []
+        return [max(1, min(10, int(v))) for v in value if isinstance(v, (int, float))][:16]
+
+    @field_validator("motif_development", mode="before")
+    @classmethod
+    def _short_text(cls, value: Any) -> Any:
+        return str(value)[:200] if value is not None else ""
 
 
 class SectionCue(BaseModel):
@@ -252,6 +386,13 @@ class SectionCue(BaseModel):
     soloist: Instrument | None = None
     tacet: list[Instrument] = Field(default_factory=list, description="Sit this window out")
     direction: str = Field(default="", max_length=280)
+    brief: ArrangementBrief | None = None
+
+    @field_validator("brief", mode="before")
+    @classmethod
+    def _lenient_brief(cls, value: Any) -> Any:
+        """A brief that is not even an object is no brief at all."""
+        return value if isinstance(value, (dict, ArrangementBrief)) else None
 
     @field_validator("soloist", mode="before")
     @classmethod
@@ -262,6 +403,14 @@ class SectionCue(BaseModel):
     @classmethod
     def _known_tacet(cls, value: Any) -> Any:
         return coerce_instruments(value)
+
+
+class Feel(BaseModel, frozen=True):
+    """What every player knows before counting in: key, tempo and meter."""
+
+    key: str | None = None
+    tempo: int | None = None
+    time_signature: str = "4/4"
 
 
 class Song(BaseModel):

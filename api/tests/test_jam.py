@@ -16,7 +16,7 @@ def wired(monkeypatch, cue_payload, player_payload):
     store = FakeStore()
     provider = FakeProvider({"SectionCue": cue_payload, "PlayerOutput": player_payload})
     monkeypatch.setattr(jam, "make_store", lambda: store)
-    monkeypatch.setattr(jam, "make_orchestrator", lambda: BandOrchestrator(provider))
+    monkeypatch.setattr(jam, "make_orchestrator", lambda _provider: BandOrchestrator(provider))
     return store, provider
 
 
@@ -36,6 +36,8 @@ def test_connect_announces_the_session(wired):
 
     assert hello["type"] == "session"
     assert hello["tempo"] == 96
+    assert hello["key"] == "A minor"
+    assert hello["time_signature"] == "4/4"
     assert hello["id"]
 
 
@@ -132,7 +134,7 @@ def test_a_provider_failure_reaches_the_client(wired):
     assert all(part["notes"] == [] for part in messages[1]["bar"]["parts"].values())
 
 
-def test_an_unexpected_failure_is_reported_not_swallowed(wired, monkeypatch):
+def test_an_unexpected_failure_is_reported_without_leaking_internals(wired, monkeypatch):
     def explode(*args, **kwargs):
         raise RuntimeError("provider is down")
 
@@ -144,7 +146,7 @@ def test_an_unexpected_failure_is_reported_not_swallowed(wired, monkeypatch):
         messages = drain(socket, 2)
 
     error = next(m for m in messages if m["type"] == "error")
-    assert "provider is down" in error["detail"]
+    assert error["detail"] == "The band could not finish that."
 
 
 def test_stop_ends_the_session_and_cleans_up(wired):

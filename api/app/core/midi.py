@@ -7,38 +7,21 @@ import mido
 
 from app.core.articulation import voice_for
 from app.core.kit import KIT_PRESETS, Kit
+from app.core.meter import beats_per_bar, parse_time_signature
 from app.core.schema import BAND, Instrument, Song
 
 TICKS_PER_BEAT = 480
-DEFAULT_BEATS_PER_BAR = 4
 
 #: General MIDI program numbers, and channel 9 for percussion.
 PROGRAMS: dict[Instrument, int] = {
     Instrument.DRUMS: 0,
+    Instrument.BASS: 33,
     Instrument.KEYS: 0,
     Instrument.GUITAR: 27,
     Instrument.FLUTE: 73,
     Instrument.VIOLIN: 40,
 }
 DRUM_CHANNEL = 9
-
-
-def parse_time_signature(signature: str) -> tuple[int, int]:
-    """"6/8" -> (6, 8). Falls back to 4/4 on anything unparseable."""
-    try:
-        numerator, denominator = signature.split("/")
-        return int(numerator), int(denominator)
-    except (ValueError, AttributeError):
-        return DEFAULT_BEATS_PER_BAR, 4
-
-
-def beats_per_bar(signature: str) -> float:
-    """Quarter-note beats in one bar, which is the unit `Note.dur` counts in.
-
-    A 6/8 bar is six eighth notes, so three quarter-note beats.
-    """
-    numerator, denominator = parse_time_signature(signature)
-    return numerator * (4 / denominator)
 
 
 def _ticks(position_in_bars: float, per_bar: float) -> int:
@@ -142,17 +125,32 @@ def instrument_track(song: Song, instrument: Instrument) -> mido.MidiFile:
     return midi
 
 
+def song_to_midi(song: Song) -> mido.MidiFile:
+    """Every stem as one type-1 file, each melodic part on its own channel."""
+    merged = mido.MidiFile(type=1, ticks_per_beat=TICKS_PER_BEAT)
+    melodic = iter(range(DRUM_CHANNEL))
+    for instrument in BAND:
+        channel = DRUM_CHANNEL if instrument is Instrument.DRUMS else next(melodic)
+        track = instrument_track(song, instrument).tracks[0]
+        merged.tracks.append(
+            mido.MidiTrack(
+                m if m.is_meta else m.copy(channel=channel) for m in track
+            )
+        )
+    return merged
+
+
 def stems_zip(song: Song) -> bytes:
-    """All five stems zipped, named after the song."""
+    """All six stems zipped, named after the song."""
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for instrument in BAND:
             track = io.BytesIO()
             instrument_track(song, instrument).save(file=track)
-            archive.writestr(f"{_slug(song.title)}-{instrument.value}.mid", track.getvalue())
+            archive.writestr(f"{slug(song.title)}-{instrument.value}.mid", track.getvalue())
     return buffer.getvalue()
 
 
-def _slug(title: str) -> str:
+def slug(title: str) -> str:
     words = "".join(c if c.isalnum() else " " for c in title).split()
     return "-".join(words).lower() or "narada"

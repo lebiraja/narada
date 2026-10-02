@@ -5,10 +5,11 @@ import mido
 
 from app.core.midi import (
     TICKS_PER_BEAT,
-    _slug,
+    slug,
     beats_per_bar,
     instrument_track,
     parse_time_signature,
+    song_to_midi,
     stems_zip,
 )
 from app.core.kit import KIT_PRESETS, Kit
@@ -104,16 +105,16 @@ def test_melodic_instruments_get_a_program_change():
     assert [m.program for m in track if m.type == "program_change"] == [73]
 
 
-def test_stems_zip_contains_all_five_instruments():
+def test_stems_zip_contains_all_six_instruments():
     archive = zipfile.ZipFile(io.BytesIO(stems_zip(make_song())))
 
-    assert len(archive.namelist()) == 5
+    assert len(archive.namelist()) == 6
     assert "monsoon-line-violin.mid" in archive.namelist()
 
 
 def test_slug_handles_awkward_titles():
-    assert _slug("Monsoon / Line!") == "monsoon-line"
-    assert _slug("***") == "narada"
+    assert slug("Monsoon / Line!") == "monsoon-line"
+    assert slug("***") == "narada"
 
 
 def test_parse_time_signature():
@@ -252,3 +253,43 @@ def test_an_unknown_articulation_plays_the_normal_voice():
 
     assert [m.program for m in track if m.type == "program_change"] == [40]
     assert next(m.note for m in track if m.type == "note_on") == 69
+
+
+def test_merged_midi_gives_six_parts_distinct_channels_with_drums_on_nine():
+    merged = song_to_midi(make_song())
+
+    channels = [
+        {m.channel for m in track if not m.is_meta} or {None} for track in merged.tracks
+    ]
+    names = [track[0].name for track in merged.tracks]
+    drums = channels[names.index("drums")]
+    melodic = [c for name, c in zip(names, channels) if name != "drums"]
+
+    assert len(merged.tracks) == 6
+    assert drums == {9}
+    assert len({frozenset(c) for c in melodic}) == 5
+    assert all(9 not in c for c in melodic)
+
+
+def test_bass_plays_finger_bass_by_default():
+    song = Song(title="Low", key="E", tempo=100, bars=[Bar(index=0, chord="E", parts={
+        Instrument.BASS: BarPart(
+            instrument=Instrument.BASS, bar=0, notes=[Note(pitch=40, start=0.0, dur=0.5)]
+        )
+    })])
+
+    track = instrument_track(song, Instrument.BASS).tracks[0]
+
+    assert [m.program for m in track if m.type == "program_change"] == [33]
+
+
+def test_a_slapped_bass_note_switches_to_the_slap_preset():
+    song = Song(title="Funk", key="E", tempo=100, bars=[Bar(index=0, chord="E", parts={
+        Instrument.BASS: BarPart(instrument=Instrument.BASS, bar=0, notes=[
+            Note(pitch=40, start=0.0, dur=0.25, articulation="slap"),
+        ])
+    })])
+
+    track = instrument_track(song, Instrument.BASS).tracks[0]
+
+    assert 36 in [m.program for m in track if m.type == "program_change"]
