@@ -4,11 +4,15 @@ import asyncio
 import logging
 import uuid
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 
 from app.agents.orchestrator import BandOrchestrator
-from app.core.schema import Instrument, SectionCue
-from app.core.session import JamSession, SessionStore, apply_steer
+from app.core.config import get_settings
+from app.core.limits import admit, limits
+from app.core.provider import LLMProvider, get_provider
+from app.core.schema import Feel, Instrument, SectionCue
+from app.core.session import CUE_EVERY_BARS, JamSession, SessionStore, apply_steer
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -16,21 +20,32 @@ router = APIRouter()
 #: Never generate more than this far ahead of the playhead.
 MAX_LOOKAHEAD = 6
 
-#: Swapped in tests; the socket builds its own dependencies in production.
+#: Swapped in tests; the orchestrator wraps the shared provider.
 make_store = SessionStore
 make_orchestrator = BandOrchestrator
 
 
 @router.websocket("/ws/jam")
-async def jam(socket: WebSocket) -> None:
-    await socket.accept()
+async def jam(socket: WebSocket, provider: LLMProvider = Depends(get_provider)) -> None:
+    ip = await admit(socket)
+    if ip is None:
+        return
+    max_bars = get_settings().jam_max_bars
     store = make_store()
-    orchestrator = make_orchestrator()
+    orchestrator = make_orchestrator(provider)
     session = JamSession(id=str(uuid.uuid4()))
     generating: asyncio.Task[None] | None = None
 
     await store.save(session)
-    await socket.send_json({"type": "session", "id": session.id, "tempo": session.tempo})
+    await socket.send_json(
+        {
+            "type": "session",
+            "id": session.id,
+            "tempo": session.tempo,
+            "key": session.key,
+            "time_signature": session.time_signature,
+        }
+    )
 
     async def generate_through(target_bar: int) -> None:
         """Fill bars up to `target_bar`, streaming each one as it is written."""
@@ -39,6 +54,8 @@ async def jam(socket: WebSocket) -> None:
                 session.cue = await orchestrator.leader.next_cue(
                     bar_index=session.next_bar,
                     key=session.key,
+                    tempo=session.tempo,
+                    time_signature=session.time_signature,
                     previous=session.cue,
                     steer=session.steer,
                 )
@@ -48,7 +65,11 @@ async def jam(socket: WebSocket) -> None:
 
             cue = _steered(session.cue, session.steer)
             bar = await orchestrator.play_bar(
-                bar_index=session.next_bar, cue=cue, history=session.history
+                bar_index=session.next_bar,
+                cue=cue,
+                history=session.history,
+                feel=Feel(key=session.key, tempo=session.tempo, time_signature=session.time_signature),
+                position=(session.next_bar % CUE_EVERY_BARS, CUE_EVERY_BARS),
             )
             session.remember(bar)
             session.next_bar += 1
@@ -61,9 +82,9 @@ async def jam(socket: WebSocket) -> None:
             await generate_through(target_bar)
         except asyncio.CancelledError:
             raise
-        except Exception as exc:
+        except Exception:
             log.exception("bar generation failed in session %s", session.id)
-            await socket.send_json({"type": "error", "detail": f"{type(exc).__name__}: {exc}"})
+            await socket.send_json({"type": "error", "detail": "The band could not finish that."})
 
     try:
         while True:
@@ -71,8 +92,13 @@ async def jam(socket: WebSocket) -> None:
             kind = message.get("type")
 
             if kind == "need_bars":
+                if max_bars and session.next_bar >= max_bars:
+                    await socket.send_json({"type": "error", "detail": "Set limit reached"})
+                    break
                 playhead = int(message.get("from_bar", 0))
                 target = playhead + MAX_LOOKAHEAD
+                if max_bars:
+                    target = min(target, max_bars - 1)
                 if generating is None or generating.done():
                     generating = asyncio.create_task(_guarded(target))
 
@@ -93,6 +119,9 @@ async def jam(socket: WebSocket) -> None:
             generating.cancel()
         await store.delete(session.id)
         await store.close()
+        await limits.close_socket(ip)
+        if socket.client_state == WebSocketState.CONNECTED:
+            await socket.close()
 
 
 def _steered(cue: SectionCue | None, steer: dict[str, object]) -> SectionCue:

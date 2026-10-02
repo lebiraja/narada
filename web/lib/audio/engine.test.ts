@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { Song } from "./types";
 import { bar, part, song } from "@/lib/testing/fixtures";
 import { createToneMock } from "@/lib/testing/tone-mock";
 
@@ -8,12 +9,19 @@ vi.mock("tone", () => mock.tone);
 
 const { BandEngine } = await import("./engine");
 
+/** Play a song and fire one transport bar per bar of it, one second apart. */
+async function play(engine: InstanceType<typeof BandEngine>, written: Song): Promise<void> {
+  await engine.playSong(written);
+  written.bars.forEach((_, i) => mock.tick(i));
+}
+
 describe("BandEngine", () => {
   let engine: InstanceType<typeof BandEngine>;
 
   beforeEach(async () => {
     mock.triggered.length = 0;
     mock.repeats.length = 0;
+    for (const kind of Object.keys(mock.created)) delete mock.created[kind];
     vi.clearAllMocks();
     engine = new BandEngine();
     await engine.init();
@@ -27,7 +35,7 @@ describe("BandEngine", () => {
   });
 
   it("schedules every note of a song", async () => {
-    await engine.playSong(
+    await play(engine, 
       song([bar(0, { keys: part("keys", [60, 64]), flute: part("flute", [72]) })]),
     );
 
@@ -37,23 +45,46 @@ describe("BandEngine", () => {
 
   it("places notes at the right time for the tempo", async () => {
     // 120 BPM: one bar is 2 seconds, so start 0.25 lands 0.5s in.
-    await engine.playSong(song([bar(0, { keys: part("keys", [60, 64]) })]));
+    await play(engine, song([bar(0, { keys: part("keys", [60, 64]) })]));
 
     const [first, second] = mock.triggered;
     expect(second.time - first.time).toBeCloseTo(0.5);
   });
 
-  it("offsets later bars by a full bar length", async () => {
-    await engine.playSong(
+  it("plays each bar at its own transport bar, not a seconds interval", async () => {
+    await play(engine, 
       song([bar(0, { keys: part("keys", [60]) }), bar(1, { keys: part("keys", [62], 1) })]),
     );
 
+    expect(mock.repeats[0].interval).toBe("1m");
+    expect(mock.triggered.map((t) => t.time)).toEqual([0, 1]);
+  });
+
+  it.each([
+    ["4/4", [4, 4], 0.5],
+    ["3/4", [3, 4], 0.375],
+    ["6/8", [6, 8], 0.375],
+    ["7/8", [7, 8], 0.4375],
+  ])("scales note offsets to a %s bar", async (sig, transportSig, offset) => {
+    await play(engine, song([bar(0, { keys: part("keys", [60, 64]) })], { time_signature: sig }));
+
     const [first, second] = mock.triggered;
-    expect(second.time - first.time).toBeCloseTo(2);
+    expect(mock.transport.timeSignature).toEqual(transportSig);
+    expect(second.time - first.time).toBeCloseTo(offset);
+  });
+
+  it("takes the meter for live play", () => {
+    engine.startLive(120, () => {}, "7/8");
+    engine.buffer.push(bar(0, { keys: part("keys", [60, 64]) }));
+
+    mock.tick();
+
+    const [first, second] = mock.triggered;
+    expect(second.time - first.time).toBeCloseTo(0.4375);
   });
 
   it("converts velocity to gain", async () => {
-    await engine.playSong(song([bar(0, { keys: part("keys", [60]) })]));
+    await play(engine, song([bar(0, { keys: part("keys", [60]) })]));
 
     expect(mock.triggered[0].velocity).toBeCloseTo(90 / 127);
   });
@@ -62,13 +93,13 @@ describe("BandEngine", () => {
     let state = { playing: false };
     engine.subscribe((next) => (state = next));
 
-    await engine.playSong(song([bar(0)]));
+    await play(engine, song([bar(0)]));
 
     expect(state.playing).toBe(true);
   });
 
   it("stops the transport and clears the buffer", async () => {
-    await engine.playSong(song([bar(0, { keys: part("keys", [60]) })]));
+    await play(engine, song([bar(0, { keys: part("keys", [60]) })]));
     engine.buffer.push(bar(5));
 
     engine.stop();
@@ -94,6 +125,17 @@ describe("BandEngine", () => {
     mock.tick();
 
     expect(mock.triggered.map((t) => t.note)).toEqual(["C2"]);
+  });
+
+  it("stops after the last bar of a streamed piece instead of repeating it", () => {
+    engine.startLive(120, () => {});
+    engine.endAt(1);
+    engine.buffer.push(bar(0, { drums: part("drums", [36]) }));
+
+    mock.tick();
+    mock.tick();
+
+    expect(mock.triggered).toHaveLength(1);
   });
 
   it("asks for more bars once the buffer runs low", () => {
@@ -128,6 +170,31 @@ describe("BandEngine", () => {
 
     expect(mock.triggered).toHaveLength(2);
     expect(mock.triggered[1].note).toBe("C2");
+  });
+
+  it("routes the band through one shared reverb", () => {
+    expect(mock.created.Reverb).toHaveLength(1);
+  });
+
+  it("turns an agent patch's reverb into that instrument's send level", () => {
+    const patch = {
+      oscillator: "sine",
+      attack: 0.01,
+      decay: 0.1,
+      sustain: 0.5,
+      release: 0.2,
+      filter_freq: 4000,
+      filter_q: 1,
+      reverb: 0.7,
+      delay: 0,
+    } as const;
+
+    engine.applyPatches({ flute: patch });
+
+    const ramped = (mock.created.Gain as Array<{ gain: { rampTo: ReturnType<typeof vi.fn> } }>)
+      .filter((g) => g.gain.rampTo.mock.calls.length);
+    expect(ramped).toHaveLength(1);
+    expect(ramped[0].gain.rampTo).toHaveBeenCalledWith(0.7, 0.05);
   });
 
   it("ramps the tempo instead of jumping", () => {
@@ -166,13 +233,14 @@ describe("BandEngine with articulated notes", () => {
   beforeEach(async () => {
     mock.triggered.length = 0;
     mock.repeats.length = 0;
+    for (const kind of Object.keys(mock.created)) delete mock.created[kind];
     vi.clearAllMocks();
     engine = new BandEngine();
     await engine.init();
   });
 
   it("plays a drum note written as a named kit piece", async () => {
-    await engine.playSong(
+    await play(engine, 
       song([
         bar(0, {
           drums: {
@@ -190,7 +258,7 @@ describe("BandEngine with articulated notes", () => {
   });
 
   it("uses a kit piece's own velocity when the note gives none", async () => {
-    await engine.playSong(
+    await play(engine, 
       song([
         bar(0, {
           drums: {
@@ -211,7 +279,7 @@ describe("BandEngine with articulated notes", () => {
   });
 
   it("skips a drum note naming a piece that does not exist", async () => {
-    await engine.playSong(
+    await play(engine, 
       song([
         bar(0, {
           drums: {
@@ -230,7 +298,7 @@ describe("BandEngine with articulated notes", () => {
   it("shortens a pizzicato note", async () => {
     const withArticulation = async (articulation: string | null) => {
       mock.triggered.length = 0;
-      await engine.playSong(
+      await play(engine, 
         song([
           bar(0, {
             violin: {
@@ -248,8 +316,25 @@ describe("BandEngine with articulated notes", () => {
     expect(await withArticulation("pizz")).toBeLessThan(await withArticulation(null));
   });
 
+  it("plays the bass on its synth, down to its lowest note", async () => {
+    await play(engine, 
+      song([
+        bar(0, {
+          bass: {
+            instrument: "bass",
+            bar: 0,
+            notes: [{ pitch: 28, start: 0, dur: 0.5, vel: 100, articulation: "slap" }],
+            patch: null,
+          },
+        }),
+      ]),
+    );
+
+    expect(mock.triggered[0].note).toBe("E1");
+  });
+
   it("sounds guitar harmonics an octave above where they are written", async () => {
-    await engine.playSong(
+    await play(engine, 
       song([
         bar(0, {
           guitar: {
@@ -268,7 +353,7 @@ describe("BandEngine with articulated notes", () => {
   });
 
   it("plays an unknown articulation as the normal voice", async () => {
-    await engine.playSong(
+    await play(engine, 
       song([
         bar(0, {
           flute: {

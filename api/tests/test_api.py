@@ -8,7 +8,6 @@ from fastapi.testclient import TestClient
 
 from app.agents.orchestrator import BandOrchestrator
 from app.api import compose as compose_route
-from app.core.provider import GenerationError
 from app.main import app
 from tests.conftest import FakeProvider
 
@@ -22,7 +21,7 @@ def client() -> TestClient:
 def band(monkeypatch, song_plan_payload, player_payload):
     """Swap the real orchestrator for one backed by a fake provider."""
     provider = FakeProvider({"SongPlan": song_plan_payload, "PlayerOutput": player_payload})
-    monkeypatch.setattr(compose_route, "BandOrchestrator", lambda: BandOrchestrator(provider))
+    monkeypatch.setattr(compose_route, "BandOrchestrator", lambda _provider: BandOrchestrator(provider))
     return provider
 
 
@@ -61,7 +60,7 @@ def test_compose_reports_a_bandleader_failure_as_502(client, band):
     assert "could not plan" in response.json()["detail"]
 
 
-def test_export_returns_five_stems(client):
+def test_export_returns_six_stems(client):
     song = {
         "title": "Verify Take",
         "key": "A minor",
@@ -89,7 +88,7 @@ def test_export_returns_five_stems(client):
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/zip"
     assert "verify-take-stems.zip" in response.headers["content-disposition"]
-    assert len(zipfile.ZipFile(io.BytesIO(response.content)).namelist()) == 5
+    assert len(zipfile.ZipFile(io.BytesIO(response.content)).namelist()) == 6
 
 
 def test_export_rejects_a_malformed_song(client):
@@ -109,4 +108,4 @@ def test_export_handles_a_song_with_no_bars(client):
     response = client.post("/api/export/midi", json=song)
 
     assert response.status_code == 200
-    assert len(zipfile.ZipFile(io.BytesIO(response.content)).namelist()) == 5
+    assert len(zipfile.ZipFile(io.BytesIO(response.content)).namelist()) == 6

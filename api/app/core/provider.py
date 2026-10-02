@@ -12,6 +12,7 @@ from typing import TypeVar
 import httpx
 from openai import APIError, AsyncOpenAI, RateLimitError
 from pydantic import BaseModel, ValidationError
+from starlette.requests import HTTPConnection
 
 from app.core.config import get_settings
 
@@ -22,6 +23,9 @@ T = TypeVar("T", bound=BaseModel)
 #: Reasoning models spend tokens thinking before the JSON. Too low a ceiling
 #: truncates mid-object, which some providers reject outright with a 400.
 DEFAULT_MAX_TOKENS = 4000
+
+#: How much of a validation error is fed back to the model on a retry.
+MAX_FEEDBACK_CHARS = 300
 
 #: How long we are willing to sit out a rate limit before giving up on a bar.
 MAX_RETRY_WAIT = 30.0
@@ -57,18 +61,20 @@ class LLMProvider:
         fast: bool = True,
         temperature: float = 0.9,
         max_tokens: int = DEFAULT_MAX_TOKENS,
-        attempts: int = 2,
+        attempts: int = 3,
     ) -> T:
         """Ask the model for JSON matching `schema`.
 
-        Retries once by default, because a truncated or malformed response is
-        usually transient. Raises GenerationError when every attempt fails.
+        A malformed response is retried with the validation error appended, so
+        the next attempt knows what to fix. Raises GenerationError when every
+        attempt fails.
         """
         model = self._player_model if fast else self._leader_model
         effort = self._player_effort if fast else self._leader_effort
         # Not every OpenAI-compatible provider accepts this; only send it when set.
         extra = {"reasoning_effort": effort} if effort else {}
         last: Exception | None = None
+        prompt = user
 
         for attempt in range(attempts):
             try:
@@ -76,7 +82,7 @@ class LLMProvider:
                     model=model,
                     messages=[
                         {"role": "system", "content": system},
-                        {"role": "user", "content": user},
+                        {"role": "user", "content": prompt},
                     ],
                     temperature=temperature,
                     max_tokens=max_tokens,
@@ -100,6 +106,11 @@ class LLMProvider:
                 )
                 if attempt + 1 >= attempts:
                     break
+                if isinstance(exc, ValueError):  # covers JSON and validation errors
+                    prompt = (
+                        f"{user}\n\nYour previous reply was rejected: "
+                        f"{str(exc)[:MAX_FEEDBACK_CHARS]}\nReply again with valid JSON only."
+                    )
                 wait = (
                     retry_after(exc)
                     if isinstance(exc, RateLimitError)
@@ -110,6 +121,14 @@ class LLMProvider:
                 await asyncio.sleep(wait)
 
         raise GenerationError(f"{schema.__name__} generation failed: {last}") from last
+
+    async def close(self) -> None:
+        await self._client.close()
+
+
+def get_provider(connection: HTTPConnection) -> LLMProvider:
+    """The one provider built at startup, shared by every request and socket."""
+    return connection.app.state.provider
 
 
 def retry_after(error: Exception, default: float = 5.0) -> float:

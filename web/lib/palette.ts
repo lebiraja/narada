@@ -6,6 +6,7 @@ import type { Instrument } from "./audio/types";
  */
 export const PLAYER: Record<Instrument, { hue: string; name: string; role: string }> = {
   drums: { hue: "#C9962E", name: "Drums", role: "keeps time" },
+  bass: { hue: "#5C4033", name: "Bass", role: "anchors the low end" },
   keys: { hue: "#7A4B63", name: "Keyboard", role: "holds the harmony" },
   guitar: { hue: "#A6402D", name: "Guitar", role: "rhythm and colour" },
   flute: { hue: "#6B7F5C", name: "Flute", role: "a single voice" },

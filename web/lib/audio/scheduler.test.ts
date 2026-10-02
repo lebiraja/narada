@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { parseMeter } from "./meter";
 import { BarBuffer, barSeconds, LOOKAHEAD_BARS } from "./scheduler";
 import type { Bar } from "./types";
 
@@ -7,9 +8,21 @@ const makeBar = (index: number): Bar => ({ index, chord: "Am7", parts: {} });
 
 describe("barSeconds", () => {
   it("computes bar length from tempo", () => {
-    expect(barSeconds(120)).toBeCloseTo(2);
-    expect(barSeconds(60)).toBeCloseTo(4);
-    expect(barSeconds(120, 3)).toBeCloseTo(1.5);
+    expect(barSeconds(120, 4)).toBeCloseTo(2);
+    expect(barSeconds(60, 4)).toBeCloseTo(4);
+  });
+
+  it.each([
+    ["4/4", 2],
+    ["3/4", 1.5],
+    ["6/8", 1.5],
+    ["7/8", 1.75],
+  ])("makes a %s bar at 120 BPM last %ss", (sig, seconds) => {
+    const { beatsPerBar } = parseMeter(sig);
+
+    const length = barSeconds(120, beatsPerBar);
+
+    expect(length).toBeCloseTo(seconds);
   });
 });
 

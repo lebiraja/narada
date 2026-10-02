@@ -14,10 +14,22 @@ export interface Triggered {
 export function createToneMock() {
   const triggered: Triggered[] = [];
   const repeats: Array<{ callback: (time: number) => void; interval: string }> = [];
+  const created: Record<string, object[]> = {};
   let started = false;
 
+  /** Remember each audio node built, by Tone class name, for wiring assertions. */
+  function record(kind: string, node: object): void {
+    (created[kind] ??= []).push(node);
+  }
+
+  const bpm = {
+    value: 96,
+    rampTo: vi.fn(),
+    getValueAtTime: vi.fn(() => bpm.value),
+  };
   const transport = {
-    bpm: { rampTo: vi.fn(), value: 96 },
+    bpm,
+    timeSignature: 4 as number | number[],
     start: vi.fn(() => {
       started = true;
     }),
@@ -25,7 +37,9 @@ export function createToneMock() {
       started = false;
     }),
     cancel: vi.fn(),
-    clear: vi.fn(),
+    clear: vi.fn((id: number) => {
+      repeats[id].callback = () => {};
+    }),
     scheduleRepeat: vi.fn((callback: (time: number) => void, interval: string) => {
       repeats.push({ callback, interval });
       return repeats.length - 1;
@@ -43,6 +57,18 @@ export function createToneMock() {
     toDestination = vi.fn(() => this);
   }
 
+  /** A node that only needs to be wired up and torn down. */
+  function node(kind: string) {
+    return class {
+      constructor(readonly options?: unknown) {
+        record(kind, this);
+      }
+      connect = vi.fn(() => this);
+      toDestination = vi.fn(() => this);
+      dispose = vi.fn();
+    };
+  }
+
   const tone = {
     start: vi.fn(async () => {}),
     now: vi.fn(() => 0),
@@ -55,17 +81,32 @@ export function createToneMock() {
     Synth: class {},
     PolySynth: Voiceish,
     Sampler: Voiceish,
+    MembraneSynth: Voiceish,
+    MetalSynth: Voiceish,
+    NoiseSynth: class {
+      constructor() {
+        record("NoiseSynth", this);
+      }
+      triggerAttackRelease = vi.fn((duration: number, time: number, velocity: number) => {
+        triggered.push({ note: "noise", duration, time, velocity });
+      });
+      connect = vi.fn(() => this);
+      dispose = vi.fn();
+    },
     Gain: class {
-      gain = { rampTo: vi.fn(), value: 0.8 };
+      gain: { rampTo: ReturnType<typeof vi.fn>; value: number };
+      constructor(value = 1) {
+        this.gain = { rampTo: vi.fn(), value };
+        record("Gain", this);
+      }
       connect = vi.fn(() => this);
       dispose = vi.fn();
     },
-    Reverb: class {
-      wet = { value: 0 };
-      connect = vi.fn(() => this);
-      toDestination = vi.fn(() => this);
-      dispose = vi.fn();
-    },
+    Reverb: node("Reverb"),
+    Filter: node("Filter"),
+    Panner: node("Panner"),
+    Compressor: node("Compressor"),
+    Limiter: node("Limiter"),
     Recorder: class {
       start = vi.fn(async () => {});
       stop = vi.fn(async () => new Blob(["audio"], { type: "audio/webm" }));
@@ -78,5 +119,5 @@ export function createToneMock() {
     for (const repeat of repeats) repeat.callback(time);
   }
 
-  return { tone, transport, triggered, repeats, tick, isStarted: () => started };
+  return { tone, transport, triggered, repeats, created, tick, isStarted: () => started };
 }

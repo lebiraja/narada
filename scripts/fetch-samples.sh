@@ -32,5 +32,6 @@ for instrument in "${!FILES[@]}"; do
 done
 
 echo
-echo "Drums are not in that set. Drop kick.mp3, snare.mp3, hat-closed.mp3 and"
+echo "Drums are not in that set; they play from a synthesised kit without samples."
+echo "To use recorded hits instead, drop kick.mp3, snare.mp3, hat-closed.mp3 and"
 echo "crash.mp3 into $DEST/drums/ from any CC0 pack (e.g. freesound.org)."

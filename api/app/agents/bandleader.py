@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 from app.agents.prompts import BANDLEADER, COMPOSER
+from app.core.meter import steps_per_bar
 from app.core.provider import GenerationError, LLMProvider
 from app.core.schema import Instrument, SectionCue
 
@@ -49,7 +50,7 @@ class Bandleader:
             user=f"Brief: {brief}",
             schema=SongPlan,
             fast=False,
-            max_tokens=6000,
+            max_tokens=10000,
         )
 
     async def next_cue(
@@ -59,6 +60,8 @@ class Bandleader:
         key: str,
         previous: SectionCue | None,
         steer: dict[str, object],
+        tempo: int | None = None,
+        time_signature: str = "4/4",
     ) -> SectionCue:
         """Decide the cue for the upcoming live window.
 
@@ -67,7 +70,9 @@ class Bandleader:
         """
         prompt = "\n".join(
             [
-                f"The band is at bar {bar_index} in {key}.",
+                f"The band is at bar {bar_index} in {key}, {time_signature}"
+                + (f" at {tempo} bpm" if tempo else "")
+                + f", {steps_per_bar(time_signature)} steps per bar.",
                 f"Previous cue: {previous.model_dump_json() if previous else 'none — open the tune'}",
                 f"The listener is steering: {steer or 'nothing requested'}",
                 "Give the cue for the next window. Keep it moving somewhere.",

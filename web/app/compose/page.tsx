@@ -6,9 +6,9 @@ import { BandMeters } from "@/components/BandMeters";
 import { Chrome } from "@/components/Chrome";
 import { NumberTicker } from "@/components/ui/number-ticker";
 import { ShineBorder } from "@/components/ui/shine-border";
-import { composeSong, download, exportMidi } from "@/lib/api";
-import type { Song } from "@/lib/audio/types";
+import { download, exportAudio, exportMidi } from "@/lib/api";
 import { useBand } from "@/lib/useBand";
+import { useCompose } from "@/lib/useCompose";
 
 /** Short labels to tap; the full brief is what gets sent. */
 const STARTERS: Array<{ label: string; brief: string }> = [
@@ -27,24 +27,25 @@ const STARTERS: Array<{ label: string; brief: string }> = [
 ];
 
 export default function ComposePage() {
-  const { state, playSong, stop, setVolume } = useBand();
+  const { engine, state, unlock, playSong, stop, setVolume } = useBand();
+  const compose = useCompose(engine, unlock);
+  const { song, plan, written, error } = compose;
   const [brief, setBrief] = useState("");
-  const [song, setSong] = useState<Song | null>(null);
-  const [working, setWorking] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const working = compose.status === "connecting" || compose.status === "writing";
 
   async function write() {
     if (!brief.trim() || working) return;
-    setWorking(true);
-    setError(null);
+    await compose.start(brief);
+  }
+
+  async function exportMp3() {
+    if (!song) return;
+    setExportError(null);
     try {
-      const written = await composeSong(brief);
-      setSong(written);
-      await playSong(written);
+      download(await exportAudio(song), `${song.title}.mp3`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The request did not get through.");
-    } finally {
-      setWorking(false);
+      setExportError(cause instanceof Error ? cause.message : "The export did not get through.");
     }
   }
 
@@ -91,13 +92,24 @@ export default function ComposePage() {
         </button>
 
         {working && (
-          <p className="mt-3 text-[0.8rem] text-bone/45">
-            Every bar is five musicians deciding at once, so this takes a minute.
-          </p>
+          <div className="mt-3 flex items-center gap-4 text-[0.8rem] text-bone/45">
+            <p>
+              {plan
+                ? `Bar ${written} of ${plan.total_bars} written — playback starts as they land.`
+                : "Every bar is six musicians deciding at once; the first few take a moment."}
+            </p>
+            <button
+              type="button"
+              onClick={compose.stop}
+              className="border border-bone/20 px-3 py-1 text-bone/70 hover:border-brass hover:text-brass"
+            >
+              Stop
+            </button>
+          </div>
         )}
-        {error && (
+        {(error ?? exportError) && (
           <p className="mt-4 border-l-2 border-[#a6402d] pl-3 text-[0.85rem] text-[#d98b78]">
-            {error}
+            {error ?? exportError}
           </p>
         )}
       </section>
@@ -126,6 +138,13 @@ export default function ComposePage() {
                 className="border border-bone/20 px-4 py-2 text-[0.85rem] hover:border-brass hover:text-brass"
               >
                 Download parts
+              </button>
+              <button
+                type="button"
+                onClick={exportMp3}
+                className="border border-bone/20 px-4 py-2 text-[0.85rem] hover:border-brass hover:text-brass"
+              >
+                Export MP3
               </button>
             </div>
           </div>

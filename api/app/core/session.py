@@ -17,6 +17,7 @@ CUE_EVERY_BARS = 4
 class JamSession(BaseModel):
     id: str
     key: str = "A minor"
+    time_signature: str = "4/4"
     tempo: int = Field(default=96, ge=40, le=240)
     next_bar: int = 0
     cue: SectionCue | None = None

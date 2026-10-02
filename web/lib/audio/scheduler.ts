@@ -50,7 +50,7 @@ export class BarBuffer {
   }
 }
 
-/** Seconds per bar for a tempo in BPM and a beats-per-bar count. */
-export function barSeconds(tempo: number, beatsPerBar = 4): number {
+/** Seconds per bar for a tempo in BPM and a quarter-note beats-per-bar count. */
+export function barSeconds(tempo: number, beatsPerBar: number): number {
   return (60 / tempo) * beatsPerBar;
 }

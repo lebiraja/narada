@@ -10,6 +10,16 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     secret_key: str = "change-me"
 
+    #: Comma-separated origins the browser may call from.
+    cors_origins: str = "http://localhost:3000"
+    #: When set, REST needs an X-API-Key header and sockets a ?key= parameter.
+    api_key: str = ""
+
+    #: Per-client-IP limits, enforced through Redis. Zero disables each one.
+    max_sockets_per_ip: int = 3
+    compose_per_hour: int = 20
+    jam_max_bars: int = 600
+
     llm_base_url: str = "https://api.anthropic.com/v1"
     llm_api_key: str = ""
     llm_model_leader: str = "claude-opus-5"
@@ -25,6 +35,9 @@ class Settings(BaseSettings):
     #: musical result. Blank disables the parameter for providers without it.
     llm_player_effort: str = "low"
     llm_leader_effort: str = ""
+
+    #: General MIDI soundfont fluidsynth renders audio exports with.
+    soundfont_path: str = "/usr/share/sounds/sf2/FluidR3_GM.sf2"
 
 
 @lru_cache

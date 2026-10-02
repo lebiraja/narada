@@ -2,6 +2,56 @@
 
 A running log of every bug fixed. Newest on top.
 
+## 2026-10-02 — Landing page crashed once the bass joined the band
+
+**Symptom:** `next build` failed prerendering `/` with `TypeError: h[a] is not a function`, and the same crash would hit the landing page in dev.
+
+**Root cause:** `FIGURE` in `web/components/TrackLanes.tsx` was typed `Record<string, ...>` and had no `bass` entry, so `FIGURE["bass"](i)` called `undefined`. No test rendered the component.
+
+**Fix:** `web/components/TrackLanes.tsx` adds a bass figure and types the table `Record<Instrument, ...>`, so a missing player is now a compile error. New `web/components/TrackLanes.test.tsx` renders a lane for every player.
+
+**Verified:** `next build` completes with `/` prerendered; vitest 123 passed; `tsc --noEmit` clean.
+
+## 2026-10-02 — A streamed piece repeated its last bar forever
+
+**Symptom:** After a streamed composition finished, the band kept playing the final bar until Stop was pressed.
+
+**Root cause:** The live loop treats a missing bar as late and repeats the previous one; nothing told it the piece had ended.
+
+**Fix:** `BandEngine.endAt(bars)` in `web/lib/audio/engine.ts` stops the transport once the last bar has played; `web/lib/useCompose.ts` sets it from the plan's `total_bars` and again on `done`.
+
+**Verified:** new engine test (bar 1 is never triggered after `endAt(1)`); vitest 123 passed.
+
+## 2026-10-02 — `wire_check.py` broke when the provider moved into the app lifespan
+
+**Symptom:** `scripts/wire_check.py` failed with `'State' object has no attribute 'provider'`, then hit the compose rate limit from earlier runs.
+
+**Root cause:** The script used `TestClient(app)` without entering it, so the lifespan never built the shared provider. The per-IP compose limit counted its repeated runs in Redis.
+
+**Fix:** `api/scripts/wire_check.py` enters the client as a context manager and now also exercises `/ws/compose`. Run it with `COMPOSE_PER_HOUR=0`.
+
+**Verified:** wire check passes: 6 players per bar, compose WebSocket plan, 2 bars, done; jam stream cue, bar, bar.
+
+## 2026-10-02 — Drums played as pitched beeps, and every voice had its own reverb
+
+**Symptom:** On a fresh clone the drums sounded like short tonal beeps, toms and the open hat were pitch-shifted kicks and snares, and the five instruments sounded like five separate synths rather than one band in a room.
+
+**Root cause:** `web/public/samples/` is empty by default and drums have `browser: null` in `voices.generated.ts`, so drum notes went through a default pitched `Tone.Synth` on MIDI 36/38. With samples present, the 4-anchor drum map let `Tone.Sampler` pitch-shift one hit into others, and `crash.mp3` was mapped to A#2, which is the open-hat note (46), not the crash (49). Each `Voice` also built its own `Tone.Reverb` straight into the destination: no shared space, pan, EQ, compressor or limiter.
+
+**Fix:** `web/lib/audio/mixer.ts` is one mix bus (per-instrument highpass, pan, reverb send; one shared reverb; compressor then limiter). `web/lib/audio/drums.ts` is a synthesised kit with all 23 `PIECES` mapped, and the three hats share one mono synth so closed/pedal chokes open. `voices.ts` takes its output from the mixer and only uses the drum sampler for the four sampled GM notes; `SAMPLE_MAP` crash moved to C#3.
+
+**Verified:** vitest 98 passed (12 new), `tsc --noEmit` clean. How it sounds, and real hat choking, are not verified without a browser.
+
+## 2026-10-02 — The browser played every piece with 4 beats per bar
+
+**Symptom:** A 6/8 or 7/8 piece played at the wrong bar length in the browser, so the band drifted against the bar lines. The MIDI export and the offline MP3s were correct, which hid it. In compose mode the bar counter also ran one ahead of `song.bars[state.bar]`.
+
+**Root cause:** `barSeconds(tempo, beatsPerBar = 4)` defaulted to 4 beats and no caller passed the song's `time_signature`. The loop was scheduled in `"Ns"` seconds, which drifts under a tempo change, and `playSong` placed notes on the raw audio clock while the UI counter ran on the Transport (two clocks). `playSong` also emitted `bar + 1` per tick.
+
+**Fix:** `web/lib/audio/meter.ts` (`parseMeter`) is the one meter definition, mirroring `api/app/core/meter.py`. `web/lib/audio/scheduler.ts:54` now requires `beatsPerBar`. `web/lib/audio/engine.ts` runs both modes through one `startLoop`: Transport `timeSignature`, one `scheduleRepeat(cb, "1m")`, bar length read per callback with `bpm.getValueAtTime`, and start at `+0.1`. Articulation synths are built in the `Voice` constructor, not inside `schedule()`. `web/lib/useJam.ts` starts the loop on the `session` message and reads `time_signature`.
+
+**Verified:** vitest 86 passed (4/4 = 2.0 s, 3/4 = 1.5 s, 6/8 = 1.5 s, 7/8 = 1.75 s at 120 bpm, in both compose and live), `tsc --noEmit` clean. Real audio timing in a browser is not yet verified. The backend `session` message does not yet send `time_signature`, so live jam is still 4/4 until that half lands.
+
 ## 2026-09-14 — A raw network error escaped the provider's retry handler
 
 **Symptom:** Found by a test written to prove the new cover-for-a-lost-bar

@@ -3,46 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { BandEngine } from "@/lib/audio/engine";
 import type { Patch } from "@/lib/audio/types";
+import { FakeSocket } from "@/lib/testing/fake-socket";
 import { bar, part } from "@/lib/testing/fixtures";
-
-/** A WebSocket double the tests drive directly. */
-class FakeSocket {
-  static instances: FakeSocket[] = [];
-  static OPEN = 1;
-
-  readyState = 0;
-  sent: string[] = [];
-  onopen: (() => void) | null = null;
-  onmessage: ((event: { data: string }) => void) | null = null;
-  onerror: (() => void) | null = null;
-  onclose: (() => void) | null = null;
-
-  constructor(readonly url: string) {
-    FakeSocket.instances.push(this);
-  }
-
-  send(payload: string) {
-    this.sent.push(payload);
-  }
-
-  close() {
-    this.readyState = 3;
-    this.onclose?.();
-  }
-
-  open() {
-    this.readyState = 1;
-    this.onopen?.();
-  }
-
-  emit(message: object) {
-    this.onmessage?.({ data: JSON.stringify(message) });
-  }
-
-  get messages(): object[] {
-    return this.sent.map((s) => JSON.parse(s));
-  }
-}
 
 vi.stubGlobal("WebSocket", FakeSocket);
 
@@ -84,7 +46,30 @@ describe("useJam", () => {
     act(() => FakeSocket.instances[0].open());
 
     await waitFor(() => expect(result.current.status).toBe("live"));
-    expect(engine.current.startLive).toHaveBeenCalledWith(120, expect.any(Function));
+  });
+
+  it("starts playing in 4/4 once the session opens without a meter", () => {
+    const engine = fakeEngine();
+    const { result } = renderHook(() => useJam(engine));
+    act(() => result.current.start(120));
+    act(() => FakeSocket.instances[0].open());
+
+    act(() => FakeSocket.instances[0].emit({ type: "session", id: "s1", tempo: 96 }));
+
+    expect(engine.current.startLive).toHaveBeenCalledWith(120, expect.any(Function), "4/4");
+  });
+
+  it("plays in the session's meter", () => {
+    const engine = fakeEngine();
+    const { result } = renderHook(() => useJam(engine));
+    act(() => result.current.start(120));
+    act(() => FakeSocket.instances[0].open());
+
+    act(() =>
+      FakeSocket.instances[0].emit({ type: "session", id: "s1", tempo: 96, time_signature: "7/8" }),
+    );
+
+    expect(engine.current.startLive).toHaveBeenCalledWith(120, expect.any(Function), "7/8");
   });
 
   it("does not open a second socket", () => {
@@ -174,6 +159,7 @@ describe("useJam", () => {
     const { result } = renderHook(() => useJam(engine));
     act(() => result.current.start(120));
     act(() => FakeSocket.instances[0].open());
+    act(() => FakeSocket.instances[0].emit({ type: "session", id: "s1", tempo: 96 }));
 
     const [, onNeedBars] = engine.current.startLive.mock.calls[0];
     act(() => onNeedBars(12));

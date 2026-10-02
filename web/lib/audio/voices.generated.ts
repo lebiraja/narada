@@ -198,6 +198,73 @@ export const VOICES: Record<Instrument, Record<string, VoiceSpec>> = {
       "transpose": 0
     }
   },
+  "bass": {
+    "finger": {
+      "browser": {
+        "oscillator": "triangle",
+        "attack": 0.008,
+        "decay": 0.3,
+        "sustain": 0.6,
+        "release": 0.3,
+        "filter_freq": 1200
+      },
+      "velocityScale": 1.0,
+      "durationScale": 1.0,
+      "transpose": 0
+    },
+    "pick": {
+      "browser": {
+        "oscillator": "sawtooth",
+        "attack": 0.003,
+        "decay": 0.25,
+        "sustain": 0.5,
+        "release": 0.25,
+        "filter_freq": 2000
+      },
+      "velocityScale": 1.0,
+      "durationScale": 1.0,
+      "transpose": 0
+    },
+    "slap": {
+      "browser": {
+        "oscillator": "square",
+        "attack": 0.002,
+        "decay": 0.15,
+        "sustain": 0.3,
+        "release": 0.2,
+        "filter_freq": 3000
+      },
+      "velocityScale": 1.0,
+      "durationScale": 0.7,
+      "transpose": 0
+    },
+    "palm_mute": {
+      "browser": {
+        "oscillator": "triangle",
+        "attack": 0.004,
+        "decay": 0.1,
+        "sustain": 0.0,
+        "release": 0.08,
+        "filter_freq": 800
+      },
+      "velocityScale": 1.0,
+      "durationScale": 0.4,
+      "transpose": 0
+    },
+    "upright": {
+      "browser": {
+        "oscillator": "sine",
+        "attack": 0.01,
+        "decay": 0.4,
+        "sustain": 0.3,
+        "release": 0.4,
+        "filter_freq": 1000
+      },
+      "velocityScale": 1.0,
+      "durationScale": 1.0,
+      "transpose": 0
+    }
+  },
   "keys": {
     "sustain": {
       "browser": {

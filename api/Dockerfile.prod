@@ -1,0 +1,21 @@
+FROM python:3.13-slim AS deps
+
+ENV PIP_NO_CACHE_DIR=1
+COPY requirements.txt ./
+RUN pip install --prefix=/install -r requirements.txt
+
+FROM python:3.13-slim
+
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fluidsynth ffmpeg fluid-soundfont-gm \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 band
+
+COPY --from=deps /install /usr/local
+COPY --chown=band app ./app
+
+USER band
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

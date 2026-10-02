@@ -2,19 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { WS } from "./api";
+import { socketUrl } from "./api";
 import type { BandEngine } from "./audio/engine";
-import type { Bar, Instrument } from "./audio/types";
+import type { Bar, Instrument, Patch } from "./audio/types";
+import { type Cue, JamMessageSchema, MALFORMED } from "./schemas";
 
-export interface Cue {
-  section: string;
-  chords: string[];
-  energy: number;
-  density: number;
-  soloist: Instrument | null;
-  tacet: Instrument[];
-  direction: string;
-}
+export type { Cue };
 
 export interface SteerMessage {
   energy?: number;
@@ -22,6 +15,15 @@ export interface SteerMessage {
   mood?: string;
   solo?: Instrument | null;
   drop?: Instrument[];
+}
+
+/** The sounds an agent rewrote this bar, ready for `engine.applyPatches`. */
+export function barPatches(bar: Bar): Partial<Record<Instrument, Patch>> {
+  return Object.fromEntries(
+    Object.entries(bar.parts)
+      .filter(([, part]) => part?.patch)
+      .map(([instrument, part]) => [instrument, part!.patch!]),
+  );
 }
 
 type Status = "idle" | "connecting" | "live" | "closed" | "error";
@@ -49,33 +51,40 @@ export function useJam(engine: React.RefObject<BandEngine | null>) {
       if (!current || socketRef.current) return;
 
       setStatus("connecting");
-      const socket = new WebSocket(`${WS}/ws/jam`);
+      const socket = new WebSocket(socketUrl("/ws/jam"));
       socketRef.current = socket;
 
       socket.onopen = () => {
         setStatus("live");
         setError(null);
-        current.startLive(tempo, (fromBar) => send({ type: "need_bars", from_bar: fromBar }));
       };
 
       socket.onmessage = (event) => {
-        const message = JSON.parse(event.data);
-        if (message.type === "bar") {
-          const bar = message.bar as Bar;
+        const parsed = JamMessageSchema.safeParse(JSON.parse(event.data));
+        if (!parsed.success) {
+          setError(MALFORMED);
+          return;
+        }
+        const message = parsed.data;
+        if (message.type === "session") {
+          // The server opens with the session, so the meter is known before bar 0.
+          current.startLive(
+            tempo,
+            (fromBar) => send({ type: "need_bars", from_bar: fromBar }),
+            message.time_signature ?? "4/4",
+          );
+        } else if (message.type === "bar") {
+          const bar = message.bar;
           current.buffer.push(bar);
           setBars((prev) => new Map(prev).set(bar.index, bar));
-          const patches = Object.fromEntries(
-            Object.entries(bar.parts)
-              .filter(([, part]) => part?.patch)
-              .map(([instrument, part]) => [instrument, part!.patch!]),
-          );
+          const patches = barPatches(bar);
           if (Object.keys(patches).length) current.applyPatches(patches);
         } else if (message.type === "cue") {
-          setCue(message.cue as Cue);
+          setCue(message.cue);
         } else if (message.type === "steered") {
           current.setTempo(message.tempo);
         } else if (message.type === "error") {
-          setError(message.detail as string);
+          setError(message.detail);
         }
       };
 

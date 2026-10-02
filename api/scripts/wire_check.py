@@ -60,8 +60,7 @@ async def fake_structured(self, *, system, user, schema, **kwargs):
 
 
 def main() -> None:
-    with patch.object(LLMProvider, "structured", fake_structured):
-        client = TestClient(app)
+    with patch.object(LLMProvider, "structured", fake_structured), TestClient(app) as client:
 
         response = client.post("/api/compose", json={"brief": "wire check"})
         assert response.status_code == 200, response.text
@@ -73,6 +72,12 @@ def main() -> None:
         assert export.status_code == 200
         stems = zipfile.ZipFile(io.BytesIO(export.content)).namelist()
         print(f"export       {len(stems)} stems, {len(export.content)} bytes")
+
+        with client.websocket_connect("/ws/compose") as socket:
+            socket.send_json({"type": "compose", "brief": "wire check"})
+            plan = socket.receive_json()
+            bars = [socket.receive_json() for _ in range(plan["total_bars"])]
+            print(f"compose ws   {plan['type']}, {len(bars)} bars, then {socket.receive_json()['type']}")
 
         with client.websocket_connect("/ws/jam") as socket:
             assert socket.receive_json()["type"] == "session"
