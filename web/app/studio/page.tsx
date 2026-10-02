@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { BandMeters } from "@/components/BandMeters";
 import { Chrome } from "@/components/Chrome";
-import { download, exportMidi } from "@/lib/api";
+import { download, exportAudio, exportMidi } from "@/lib/api";
 import type { Song } from "@/lib/audio/types";
 import { useBand } from "@/lib/useBand";
 import { useJam } from "@/lib/useJam";
@@ -113,9 +113,18 @@ export default function StudioPage() {
                 Download parts
               </button>
             )}
+            {captured && (
+              <button
+                type="button"
+                onClick={async () => download(await exportAudio(captured), "narada-take.mp3")}
+                className="border border-bone/20 px-4 py-2 text-[0.85rem] hover:border-brass hover:text-brass"
+              >
+                Export MP3
+              </button>
+            )}
           </div>
           <p className="mt-4 max-w-[38rem] text-[0.8rem] leading-relaxed text-bone/40">
-            The audio is the mix you heard. The parts are five separate MIDI files, one per
+            The audio is the mix you heard. The parts are six separate MIDI files, one per
             player, so you can rebuild the arrangement with your own instruments.
           </p>
         </section>

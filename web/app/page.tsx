@@ -19,7 +19,7 @@ const ROOMS = [
   {
     href: "/studio",
     name: "Record a take",
-    line: "Capture what you hear. Leave with an audio file and five separate MIDI parts.",
+    line: "Capture what you hear. Leave with an audio file and six separate MIDI parts.",
   },
 ];
 
@@ -36,7 +36,7 @@ export default function Home() {
 
       <BlurFade delay={0.18} inView>
         <p className="mt-7 max-w-[34rem] text-[0.95rem] leading-relaxed text-bone/65">
-          Five instruments, five AI musicians, one bandleader deciding the harmony and
+          Six instruments, six AI musicians, one bandleader deciding the harmony and
           who takes the solo. They write their parts bar by bar while you listen.
         </p>
       </BlurFade>

@@ -1,4 +1,4 @@
-export const INSTRUMENTS = ["drums", "keys", "guitar", "flute", "violin"] as const;
+export const INSTRUMENTS = ["drums", "bass", "keys", "guitar", "flute", "violin"] as const;
 
 export type Instrument = (typeof INSTRUMENTS)[number];
 

@@ -19,6 +19,19 @@ describe("the generated voice table", () => {
     }
   });
 
+  it("lists the bass after the drums", () => {
+    expect(INSTRUMENTS.slice(0, 2)).toEqual(["drums", "bass"]);
+  });
+
+  it("gives the bass a synth for every articulation", () => {
+    expect(Object.keys(VOICES.bass).sort()).toEqual(
+      ["finger", "palm_mute", "pick", "slap", "upright"].sort(),
+    );
+    for (const spec of Object.values(VOICES.bass)) {
+      expect(spec.browser?.oscillator).toBeDefined();
+    }
+  });
+
   it("knows the named drum pieces", () => {
     expect(PIECES.kick.note).toBe(36);
     expect(PIECES.ghost_snare.note).toBe(PIECES.snare.note);

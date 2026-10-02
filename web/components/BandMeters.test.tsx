@@ -14,6 +14,13 @@ describe("BandMeters", () => {
     }
   });
 
+  it("renders a meter for all six players", () => {
+    render(<BandMeters bar={null} />);
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(6);
+    expect(screen.getByText("Bass")).toBeDefined();
+  });
+
   it("describes who is playing for screen readers", () => {
     render(<BandMeters bar={bar(0, { flute: part("flute", [72, 74]) })} />);
 

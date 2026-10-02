@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Narada",
-  description: "Five instruments, five AI musicians, one bandleader.",
+  description: "Six instruments, six AI musicians, one bandleader.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

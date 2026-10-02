@@ -1,15 +1,17 @@
 import * as Tone from "tone";
 
+import { DrumKit } from "./drums";
 import { midiToNote, resolveVelocity, toSynthOptions, velToGain } from "./patch";
 import type { BarPart, Instrument, Note, Patch } from "./types";
-import { PIECES, voiceFor, type VoiceSpec } from "./voices.generated";
+import { PIECES, VOICES, voiceFor, type VoiceSpec } from "./voices.generated";
 
 /**
  * Sampled instruments served from our own origin. Each entry maps a few
  * anchor pitches to files; Tone.Sampler pitch-shifts to fill the gaps.
  */
 const SAMPLE_MAP: Record<Instrument, Record<string, string>> = {
-  drums: { C2: "kick.mp3", D2: "snare.mp3", "F#2": "hat-closed.mp3", "A#2": "crash.mp3" },
+  drums: { C2: "kick.mp3", D2: "snare.mp3", "F#2": "hat-closed.mp3", "C#3": "crash.mp3" },
+  bass: {},
   keys: { C3: "C3.mp3", C4: "C4.mp3", C5: "C5.mp3" },
   guitar: { E2: "E2.mp3", A3: "A3.mp3", E4: "E4.mp3" },
   flute: { C4: "C4.mp3", C5: "C5.mp3", C6: "C6.mp3" },
@@ -36,53 +38,52 @@ function synthOptionsFor(spec: VoiceSpec) {
 /**
  * One instrument's playable voice.
  *
- * Each articulation gets its own synth, built lazily and kept, so a violin
- * switching between bowed and pizzicato within a bar is a different sound
+ * Each articulation gets its own synth, built up front so nothing allocates
+ * on the timing path. A violin switching between bowed and pizzicato within a bar is a different sound
  * rather than the same sound at a different velocity. A patch written by an
  * agent overrides the articulation table for that instrument.
  */
 export class Voice {
   readonly instrument: Instrument;
-  private gain: Tone.Gain;
-  private reverb: Tone.Reverb;
+  private output: Tone.ToneAudioNode;
+  private kit: DrumKit | null;
   private sampler: Tone.Sampler | null = null;
+  private base: Tone.PolySynth;
   private synths = new Map<string, Tone.PolySynth>();
   private override: Tone.PolySynth | null = null;
   private useSampler = false;
 
-  constructor(instrument: Instrument) {
+  constructor(instrument: Instrument, output: Tone.ToneAudioNode) {
     this.instrument = instrument;
-    const base = voiceFor(instrument, null);
-    this.reverb = new Tone.Reverb({ decay: 2.4, wet: 0.25 }).toDestination();
-    this.gain = new Tone.Gain(0.8).connect(this.reverb);
-    this.synths.set("", this.build(base));
+    this.output = output;
+    this.kit = instrument === "drums" ? new DrumKit(output) : null;
+    this.base = this.build(voiceFor(instrument, null));
+    for (const [articulation, spec] of Object.entries(VOICES[instrument])) {
+      this.synths.set(articulation, this.build(spec));
+    }
   }
 
   private build(spec: VoiceSpec): Tone.PolySynth {
     const options = synthOptionsFor(spec);
-    return new Tone.PolySynth(Tone.Synth, options).connect(this.gain);
+    return new Tone.PolySynth(Tone.Synth, options).connect(this.output);
   }
 
-  /** The synth for one articulation, built on first use. */
+  /** The synth for one articulation; anything without its own timbre plays the default. */
   private synthFor(articulation: string | null | undefined): Tone.PolySynth {
     if (this.override) return this.override;
 
     const key = articulation?.trim().toLowerCase() ?? "";
-    const existing = this.synths.get(key);
-    if (existing) return existing;
-
-    const synth = this.build(voiceFor(this.instrument, key));
-    this.synths.set(key, synth);
-    return synth;
+    return this.synths.get(key) ?? this.base;
   }
 
-  /** Try to load self-hosted samples. Silently keeps the synth on failure. */
+  /** Try to load self-hosted samples. Keeps the synth on failure or when none exist. */
   async loadSamples(): Promise<boolean> {
+    if (Object.keys(SAMPLE_MAP[this.instrument]).length === 0) return false;
     try {
       const sampler = new Tone.Sampler({
         urls: SAMPLE_MAP[this.instrument],
         baseUrl: `/samples/${this.instrument}/`,
-      }).connect(this.gain);
+      }).connect(this.output);
       await Tone.loaded();
       this.sampler = sampler;
       this.useSampler = true;
@@ -95,8 +96,7 @@ export class Voice {
   /** Swap in an agent-authored patch, overriding the articulation table. */
   applyPatch(patch: Patch): void {
     this.override?.dispose();
-    this.override = new Tone.PolySynth(Tone.Synth, toSynthOptions(patch)).connect(this.gain);
-    this.reverb.wet.value = patch.reverb;
+    this.override = new Tone.PolySynth(Tone.Synth, toSynthOptions(patch)).connect(this.output);
     this.useSampler = false;
   }
 
@@ -107,32 +107,24 @@ export class Voice {
     if (this.sampler) this.useSampler = true;
   }
 
-  set volume(value: number) {
-    this.gain.gain.rampTo(value, 0.05);
-  }
-
-  /** The pitch to sound: a named drum piece supplies its own. */
+  /** The pitch to sound, after the articulation's transpose. */
   private pitchOf(note: Note, spec: VoiceSpec): number | null {
-    if (note.piece) {
-      const piece = PIECES[note.piece.trim().toLowerCase().replace(/[ -]/g, "_")];
-      if (!piece) return null;
-      return piece.note;
-    }
     if (note.pitch < 0) return null;
     return Math.max(0, Math.min(127, note.pitch + spec.transpose));
   }
 
   /** Schedule one bar's notes at absolute transport time `barStart` (seconds). */
   schedule(part: BarPart, barStart: number, barLength: number): void {
+    if (this.kit) {
+      this.scheduleDrums(part, barStart, barLength, this.kit);
+      return;
+    }
     for (const note of part.notes) {
       const spec = voiceFor(this.instrument, note.articulation);
       const pitch = this.pitchOf(note, spec);
       if (pitch === null) continue;
 
-      const pieceDefault = note.piece
-        ? PIECES[note.piece.trim().toLowerCase().replace(/[ -]/g, "_")]?.vel
-        : undefined;
-      const velocity = resolveVelocity(note.vel, pieceDefault) * spec.velocityScale;
+      const velocity = resolveVelocity(note.vel) * spec.velocityScale;
 
       // An articulation that only reshapes the note keeps the sampled voice;
       // one with its own timbre needs the synth to hear the difference.
@@ -150,12 +142,36 @@ export class Voice {
     }
   }
 
+  /**
+   * Drums play the synthesised kit, except a piece recorded as one of the
+   * sample anchors: the sampler would pitch-shift a kick into a tom.
+   */
+  private scheduleDrums(part: BarPart, barStart: number, barLength: number, kit: DrumKit): void {
+    for (const note of part.notes) {
+      const piece = DrumKit.pieceFor(note.piece, note.pitch);
+      if (piece === null) continue;
+
+      const spec = voiceFor(this.instrument, note.articulation);
+      const velocity = velToGain(
+        Math.min(127, resolveVelocity(note.vel, PIECES[piece].vel) * spec.velocityScale),
+      );
+      const time = barStart + note.start * barLength;
+      const name = midiToNote(PIECES[piece].note);
+
+      if (this.useSampler && this.sampler && name in SAMPLE_MAP.drums) {
+        this.sampler.triggerAttackRelease(name, Math.max(0.02, note.dur * barLength), time, velocity);
+      } else {
+        kit.trigger(piece, time, velocity);
+      }
+    }
+  }
+
   dispose(): void {
+    this.kit?.dispose();
     this.sampler?.dispose();
     this.override?.dispose();
+    this.base.dispose();
     for (const synth of this.synths.values()) synth.dispose();
     this.synths.clear();
-    this.gain.dispose();
-    this.reverb.dispose();
   }
 }

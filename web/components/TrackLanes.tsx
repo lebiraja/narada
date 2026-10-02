@@ -2,14 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { INSTRUMENTS } from "@/lib/audio/types";
+import { INSTRUMENTS, type Instrument } from "@/lib/audio/types";
 import { PLAYER } from "@/lib/palette";
 
 const STEPS = 32;
 
 /** Each player's characteristic rhythm, as a step pattern. */
-const FIGURE: Record<string, (step: number) => boolean> = {
+const FIGURE: Record<Instrument, (step: number) => boolean> = {
   drums: (s) => s % 4 === 0 || s % 8 === 6,
+  bass: (s) => s % 8 === 0 || s % 16 === 10,
   keys: (s) => s % 8 === 0 || s % 8 === 3,
   guitar: (s) => s % 2 === 1,
   flute: (s) => s >= 18 && s < 28 && s % 2 === 0,
@@ -17,7 +18,7 @@ const FIGURE: Record<string, (step: number) => boolean> = {
 };
 
 /**
- * The band, playing. Five lanes advance through a bar on a shared clock —
+ * The band, playing. Six lanes advance through a bar on a shared clock —
  * the page's one piece of ambient motion, and the thing the product is.
  */
 export function TrackLanes({ className = "" }: { className?: string }) {
