@@ -1,5 +1,47 @@
 # Status
 
+## [2026-10-02 16:45] — Orchestration overhaul: six-player band, score-first arrangement, conductor, streaming compose
+**What:** P4 leader writes an `ArrangementBrief` per section (groove, motif, roles, energy curve); rhythm layer (drums, bass, keys, guitar) plays first, melody (flute, violin) hears it; `compose_stream` yields the plan then each bar. P5 `conduct()` quantizes, dedupes, fixes strong-beat harmony, removes clashes, enforces register and ducks under the soloist on every bar (Monsoon clash 0.036 to 0.004, keys/guitar overlap 0.50 to 0.34). P6 bass added end to end. P7 retry-with-error, 3 attempts, per-role temperature, covers fade after 2. P8 `/ws/compose`, `/api/songs` on Postgres, streaming compose UI. P9 CORS from config, optional API key, per-IP socket and compose limits, `jam_max_bars`, size caps, CI, prod Dockerfiles, nginx, Zod, ESLint. Backend 334 passed, frontend 123 passed, wire check OK, `next build` OK.
+**Why:** Reviewers said the band was out of sync and badly orchestrated: players were blind to meter and each other, rhythm was floats, the browser played everything in 4/4, drums were beeps, nothing blended.
+**State:** DONE, except: critic loop is not wired (a streamed bar cannot be revised after it is sent), soundfont playback in the browser was not adopted (spike stopped), Alembic still to replace `create_all`, the frontend never calls `/api/songs`, and none of it has been heard by a human yet.
+**Next:** Listen to a one-minute render and tune the mix values (pans, sends, compressor); Playwright E2E; critic loop for non-streamed compose.
+
+## [2026-10-02 16:20] — P3: players know key, meter, tempo and next chord; rhythm on an integer step grid
+**What:** New `Feel` model (key, tempo, time signature) threaded from compose, jam and MCP into every player prompt. Prompt now states key, meter with step count and grouping (7/8 as 3+2+2), this and next chord, position in the section, and the bar's step range with two worked examples. Players write `step`/`len` integers; `_on_grid` converts to `start`/`dur`; legacy floats still accepted. History renders as `pitch@step/len`. Backend suite 273 passed (10 new).
+**Why:** Players were blind to meter and wrote floats like 0.333, so onsets between parts drifted and 6/8 and 7/8 bars were guesswork.
+**State:** DONE. Unproven with a real model: the harness measures whether on-grid and lock rates actually improve.
+**Next:** Run a real-model comparison with the P0 metrics; P4 score-first arrangement.
+
+## [2026-10-02 16:05] — P2c: server-side MP3 export through a real soundfont
+**What:** `POST /api/export/audio` renders a song with `fluidsynth` + FluidR3 GM and normalises with `ffmpeg` (new `core/render.py`, merged MIDI in `midi.py:song_to_midi` with one channel per melodic part). `api/Dockerfile` installs the tools and soundfont. Both export routes now return 413 above 128 bars / 20,000 notes. Backend suite 263 passed; a real 2-bar render produced a valid 157 KB MP3 in Docker. `_slug` is now public `slug`.
+**Why:** What you export should sound like a real instrument set, not a different engine from playback, and the export routes had no size cap.
+**State:** DONE. No UI button yet for the audio export.
+**Next:** Soundfont spike in the browser (SpessaSynth against the Tone clock), then a Playwright listen of the mix.
+
+## [2026-10-02 15:55] — P2a: shared mix bus and a real synthesised drum kit
+**What:** Added `mixer.ts` (per-instrument highpass/pan/reverb send, one shared reverb, compressor, limiter) and `drums.ts` (23 kit pieces, shared hat synth for choke). Voices now output to the mixer; agent patch `reverb` sets the send. Vitest 98 passed, `tsc` clean. See FIXES.md.
+**Why:** Drums were pitched beeps by default and each instrument had its own reverb, so nothing blended.
+**State:** DONE (tests). Sound quality and hat choke not yet heard in a browser.
+**Next:** P2c server audio export (in progress), then the soundfont spike and a Playwright listen.
+
+## [2026-10-02 15:50] — P1 backend: live jam carries key, meter and tempo
+**What:** `JamSession` gained `time_signature`; the `session` message now sends `key` and `time_signature`; the leader's cue prompt now states key, meter and tempo (`bandleader.py:next_cue`, `ws/jam.py`). Backend suite 251 passed.
+**Why:** The leader never knew the tempo or meter, and the browser had no way to learn the meter in live mode.
+**State:** DONE — plumbing only. A live set is still always 4/4 in A minor because nothing yet chooses a different key or meter.
+**Next:** P2 (shared mix bus, real drum sounds, soundfont spike). Letting the leader or user pick key/meter for a jam goes in with P4.
+
+## [2026-10-02 15:35] — P1 frontend: one clock, correct meter
+**What:** Added `web/lib/audio/meter.ts`; `barSeconds` now requires `beatsPerBar`; `engine.ts` runs compose and live through one Transport loop in bars with a time signature; synths are built up front in `voices.ts`; `useJam.ts` reads `time_signature` from the `session` message. Vitest 86 passed, `tsc` clean. See FIXES.md.
+**Why:** The browser played every piece in 4/4, so 6/8 and 7/8 pieces were the wrong length, and two clocks could drift.
+**State:** DONE (frontend). Not yet checked with real audio in a browser.
+**Next:** Backend half of P1: `session` message carries `time_signature` and `key`, and the leader picks them. Then P2 (sound and mix bus).
+
+## [2026-10-02 12:00] — P0: ensemble metrics harness and shared meter module
+**What:** Added `api/app/core/meter.py` (single source for time-signature maths, moved out of `midi.py`), `api/app/core/metrics.py` (on-grid rate, kick–bass lock, strong-beat chord tones, clash rate, register overlap, groove consistency, empty-beat rate, in-scale rate) and `api/scripts/ensemble_report.py`. 17 new tests; full backend suite 250 passed. Baseline on the hand-written pieces: Monsoon Letters (6/8) on-grid 1.00, kick–bass lock 0.33, strong-beat chord tones 0.80, clash 0.04; Tandava (7/8) on-grid 1.00, kick–bass lock 0.39, strong-beat chord tones 0.99, clash 0.00. Keys/guitar register overlap is 0.50–0.62 on both.
+**Why:** "In sync" needs a number before the orchestration changes, so each later phase can be proven. Density-vs-energy was skipped because `Song` does not store energy.
+**State:** DONE
+**Next:** P1 frontend meter and single clock (in progress); the 90% kick–bass target applies once P6 adds a real bass part.
+
 ## [2026-09-14 07:50] — Agents composed with the new vocabulary: "Evening Whisper"
 **What:** 18 bars, D minor, 6/8 at 70bpm, written entirely by the agents. They used the articulation system unprompted: violin bowed for 12 bars then pizzicato for the whole closing section (23 pizz notes), keys on Rhodes (35 notes) with occasional bright stabs, 39 ghost notes, and seven named kit pieces including `kick_soft` and `snare_roll` — neither of which appeared in any example I wrote. Output: `output/Evening Whisper.mp3`.
 **Why:** The instrument work needed proving by the band itself, not by a hand-written demo.

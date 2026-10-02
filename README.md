@@ -5,7 +5,7 @@
 <h1 align="center">🎵 NARADA</h1>
 
 <p align="center">
-  <strong>Five instruments. Five AI agents. One bandleader. Zero rehearsals.</strong><br/>
+  <strong>Six instruments. Six AI agents. One bandleader. Zero rehearsals.</strong><br/>
   <em>Named for Narada, the wandering sage who travels between worlds with a veena in hand.</em>
 </p>
 
@@ -19,18 +19,18 @@
 
 ---
 
-Drums, keyboard, guitar, flute and violin — each played by its own AI agent,
-under a bandleader that decides harmony, form, energy and who takes the solo.
-They write their parts bar by bar while you listen. No samples, no loops — every
-note is decided in the moment.
+Drums, bass, keyboard, guitar, flute and violin — each played by its own AI
+agent, under a bandleader that decides harmony, form, energy and who takes the
+solo. They write their parts bar by bar while you listen. No loops — every note
+is decided in the moment.
 
 ## ✨ What you can do
 
 | Mode | What happens |
 |------|-------------|
-| 🎼 **Composer** | Brief the bandleader in plain English. Get a full five-part arrangement. |
+| 🎼 **Composer** | Brief the bandleader in plain English. The arrangement streams in bar by bar and starts playing as it is written. |
 | 🎸 **Live jam** | The band plays continuously. Steer energy, tempo, mood, hand out solos, sit players down. |
-| 🎙️ **Studio** | Hit record. Leave with audio and five separate MIDI stems. |
+| 🎙️ **Studio** | Hit record, or export a finished piece: an MP3 mixed through a GM soundfont, plus six separate MIDI stems. Songs can be saved to Postgres via the API. |
 | 🤖 **MCP server** | Any MCP client (Claude Code, etc.) can play the instruments directly as tools. |
 
 ## 🖥️ Screenshots
@@ -43,10 +43,17 @@ note is decided in the moment.
 
 ## 🧠 How it works
 
-The browser owns the clock. It plays bar *N* while the backend generates bar
-*N+2*: the bandleader issues a section cue, then all five instrument agents
-write their bar **in parallel**, and each bar streams back over a WebSocket. If a
-bar arrives late the engine repeats the previous one — the music never stops.
+The browser owns the clock, counted in bars. In a live jam it plays bar *N*
+while the backend generates bar *N+2*; if a bar arrives late the engine repeats
+the previous one — the music never stops.
+
+Generation is **score-first**. For each section the bandleader writes a shared
+arrangement brief (groove, bass and comp rhythm, a motif, who plays which
+role). Then, every bar, the **rhythm section** — drums, bass, keys, guitar —
+plays in parallel, and the **melody** — flute, violin — plays over the bar it
+just heard. A deterministic **conductor** then tidies the result (snaps to the
+grid, keeps strong beats on chord tones, removes clashes and crowded octaves)
+before the bar streams back over a WebSocket.
 
 Agents emit **notes as data, not audio** — which is why you can mute one
 instrument, hand it a solo mid-song, or export it as its own MIDI stem. They
@@ -60,20 +67,23 @@ code) when they want a different sound.
 ┌─────────────────────────────────────────────┐
 │  BROWSER (Next.js + Tone.js)                │
 │  owns the clock, plays the sound            │
-│  ── BandEngine · BarBuffer · 5 Voices ──    │
+│  ── BandEngine · BarBuffer · Mixer ──       │
 └────────┬────────────────────────┬───────────┘
-         │ REST                   │ WebSocket
-         ▼                       ▼
+         │ REST (export, save)    │ WebSocket (compose, jam)
+         ▼                        ▼
 ┌─────────────────────────────────────────────┐
 │  API (FastAPI)                              │
 │                                             │
-│  Bandleader → section cue (chords, energy)  │
+│  Bandleader → section cue + arrangement     │
 │       │                                     │
-│       ├── drums   ─┐                        │
-│       ├── keys     │ 5 agents in parallel   │
-│       ├── guitar   │ one bar at a time      │
-│       ├── flute    │                        │
-│       └── violin  ─┘                        │
+│       ▼  every bar                          │
+│  RHYTHM   drums · bass · keys · guitar      │
+│       │        (parallel)                   │
+│       ▼  they hear the rhythm bar           │
+│  MELODY   flute · violin  (parallel)        │
+│       │                                     │
+│       ▼                                     │
+│  Conductor → clean bar → streamed out       │
 │                                             │
 │  → any OpenAI-compatible LLM                │
 └─────────────────────────────────────────────┘
@@ -82,12 +92,13 @@ code) when they want a different sound.
 ## 🎻 The band
 
 Each player has a character, a register, and real articulations — not just
-pitch/velocity. The violin can bow or pluck. The guitar can palm-mute. The
+pitch/velocity. The violin can bow or pluck. The bass can slap. The guitar can palm-mute. The
 drummer names kit pieces, not GM numbers.
 
 | Player | Colour | Role | Voices |
 |--------|--------|------|--------|
 | 🥁 Drums | Gold | Keeps time | normal, ghost, accent + 23 named kit pieces |
+| 🔊 Bass | Umber | The low end | finger, pick, slap, palm mute, upright |
 | 🎹 Keyboard | Mauve | Holds the harmony | grand, Rhodes, FM electric, harpsichord, bright |
 | 🎸 Guitar | Ember | Rhythm and colour | clean, nylon, palm mute, harmonics, 12-string, overdrive |
 | 🪈 Flute | Olive | A single voice | flute, recorder, pan flute |
@@ -105,7 +116,8 @@ cp .env.example .env
 # Edit .env — set LLM_API_KEY at minimum
 # Works with any OpenAI-compatible endpoint: Claude, GPT, Groq, Ollama
 
-# 3. (Optional) Fetch instrument samples — synth voices work without them
+# 3. (Optional) Fetch instrument samples — synth voices and a synthesised
+#    drum kit work without them
 ./scripts/fetch-samples.sh
 
 # 4. Launch
@@ -120,10 +132,10 @@ Once all four services are healthy:
 ## 🧪 Tests
 
 ```bash
-# Backend — 76 pytest tests
+# Backend — 334 pytest tests
 docker compose run --rm --no-deps api pytest
 
-# Frontend — 44 vitest tests
+# Frontend — 123 vitest tests
 docker compose run --rm --no-deps web npx vitest run
 
 # End-to-end wire check (stubbed model, real app)
@@ -136,12 +148,12 @@ docker compose exec -T -e PYTHONPATH=/app api python scripts/wire_check.py
 |-------|------|
 | Backend | Python 3.13, FastAPI, Pydantic v2, uvicorn |
 | Frontend | Next.js 15 (App Router), React 19, Tailwind CSS |
-| Audio | Tone.js (Web Audio transport, samplers, synths, recorder) |
+| Audio | Tone.js (Web Audio transport, synth voices, synthesised drums, shared mix bus, recorder); fluidsynth + ffmpeg for MP3 export |
 | AI | Any OpenAI-compatible endpoint — Claude, GPT, Groq, or local Ollama |
 | MIDI | mido (server-side stem rendering) |
 | Agent interop | MCP SDK — the band exposed as tools |
-| State | Redis (live sessions), PostgreSQL (persistence) |
-| Infra | Docker Compose with healthchecks |
+| State | Redis (live sessions, rate limits), PostgreSQL (saved songs via `/api/songs`) |
+| Infra | Docker Compose with healthchecks, Nginx + prod Dockerfiles, GitHub Actions CI |
 
 ## 🎧 Compositions by the band
 
